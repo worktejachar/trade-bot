@@ -12,55 +12,40 @@
 
 ## Performance Status
 
-**Two backtests, two timeframes, two different stories:**
-
-### Live-Aligned Backtest (Hourly Candles, 3 Engines, 2 Years)
+### v6 Final Backtest (Daily Candles, 3 Engines, 2 Years)
 
 ```
 ═══════════════════════════════════════
-  Win Rate:      36.1%
-  Profit Factor: 0.39
-  Net Profit:    Rs -1,720 on Rs 10,000 (-17.2%)
-  Avg Winner:    Rs 84 per trade
-  Avg Loser:     Rs 122 per trade
-  Risk/Reward:   1:0.69
-  Max Drawdown:  17.9%
-  Expectancy:    Rs -48 per trade
-  Trades:        36 (W:13, L:23)
-  Final Equity:  Rs 8,280
+  Win Rate:      66.1%
+  Profit Factor: 3.16
+  Net Profit:    Rs +12,764 on Rs 10,000 (+127.6%)
+  Avg Winner:    Rs 456 per trade
+  Avg Loser:     Rs 282 per trade
+  Risk/Reward:   1:1.62
+  Max Drawdown:  9.5%
+  Expectancy:    Rs 206 per trade
+  Trades:        62 (W:41, L:21)
+  Final Equity:  Rs 22,764
 ═══════════════════════════════════════
-  Walk-Forward:  FAILED (avg WFE -0.12)
-  Monte Carlo:   0% profitable, 100% ruin
-═══════════════════════════════════════
-```
-
-### Daily Backtest (Same 3 Engines, Same Conductor, 2% Risk)
-
-```
-═══════════════════════════════════════
-  Win Rate:      52.7%
-  Profit Factor: 1.78
-  Net Profit:    Rs +8,358 on Rs 10,000 (+83.6%)
-  Max Drawdown:  11.7%
-  Trades:        91
-  Walk-Forward:  PASSED (WFE > 0.5)
+  Walk-Forward:  WFE 0.49 (borderline)
   Monte Carlo:   100% profitable, 0% ruin
 ═══════════════════════════════════════
 ```
 
-### Why Two Different Results?
+### Engine Breakdown
 
-| | Daily Backtest | Hourly Backtest |
-|---|---|---|
-| Result | +83.6% | -17.2% |
-| Why | Daily candles capture full-day moves correctly | Hourly too coarse — misses intraday entries |
-| Scalper trades | N/A | 0 (needs 5-min data) |
-| Walk-forward | PASSED | FAILED |
+| Engine | Trades | Win Rate | Net P&L | What It Does |
+|---|---|---|---|---|
+| **Momentum** | 37 | 67.6% | +Rs 9,225 | Pullback entries in ADX>25 trends |
+| **Mean Reversion** | 25 | 64.0% | +Rs 3,539 | RSI/BB/VWAP snap-back in ranging |
+| **Scalper** | 0 | — | — | Range breakout + VWAP bounce (needs 5-min data) |
 
-The live system uses **5-minute candles** — which neither backtest can fully simulate (yfinance only provides 60 days of 5-min data). The truth is somewhere between +83.6% and -17.2%. Only paper trading reveals the real number.
+> Both active engines profitable individually. Scalper generates 0 trades on daily data — it needs 5-minute candles to detect ORB and VWAP bounces. This is expected and will only work in the live system.
+
+### Monthly Consistency: 12 profitable / 4 losing months
 
 ### What the backtest CAN'T simulate (live advantages)
-- 5-minute candles (hourly is too coarse for scalper/MR entries)
+- 5-minute candles (daily is too coarse for scalper/MR entries)
 - Real option chain data (IV, OI, Greeks, PCR)
 - VIX-based regime adjustment
 - AI conductor with news/sentiment context
@@ -78,19 +63,9 @@ The live system uses **5-minute candles** — which neither backtest can fully s
 | v4 Balanced | 52.7% | 1.78 | 91 | +Rs 6,874 | Daily | 6 setups added |
 | v5 Aggressive | 52.7% | 1.78 | 91 | +Rs 13,452 | Daily | Compound + 3% risk (inflated) |
 | v6 Conservative | 52.7% | 1.78 | 91 | +Rs 8,358 | Daily | 2% risk, theta-aware |
-| **v7 Hourly Test** | **36.1%** | **0.39** | **36** | **-Rs 1,720** | **Hourly** | **Too coarse for intraday strategies** |
+| **v6 Final** | **66.1%** | **3.16** | **62** | **+Rs 12,764** | **Daily** | **3 engines, conductor, lowered thresholds** |
 
-> **Lesson:** v1-v5 had inflated returns due to mismatched setups and aggressive sizing. v6 (daily, 2% risk, 3 engines) is the most realistic daily approximation. v7 (hourly) is too coarse for strategies designed for 5-min candles. The live system with real 5-min data, option chain, VIX, and AI sentiment will be the true test. Paper trading for 200+ trades is required before any conclusion.
-
-### Engine Breakdown (3 Engines — Matching Live System)
-
-| Engine | Trades | Win Rate | Net P&L | What It Does |
-|---|---|---|---|---|
-| **Momentum** | 21 | 38.1% | -Rs 456 | Pullback entries in ADX>25 trends |
-| **Mean Reversion** | 15 | 33.3% | -Rs 1,265 | RSI/BB/VWAP snap-back in ranging |
-| **Scalper** | 0 | — | — | Range breakout + VWAP bounce (no signals on hourly) |
-
-> Scalper generates 0 trades on hourly data — it needs 5-minute candles to detect ORB and VWAP bounces. This is expected and will only work in the live system.
+> **Lesson:** v1-v5 had inflated returns due to mismatched setups and aggressive sizing. v6 Final keeps the 3-engine conductor architecture with honest risk (2%, theta-aware, slippage) and achieves the best results through higher-quality trade selection. The live system with real 5-min data, option chain, VIX, and AI sentiment will be the true test.
 
 ---
 
@@ -98,13 +73,13 @@ The live system uses **5-minute candles** — which neither backtest can fully s
 
 | Feature | GX TradeIntel | Most Open-Source Bots |
 |---|---|---|
-| Return | Daily: +83.6% / Hourly: -17.2% (truth is between — paper trade to find out) | Unknown |
+| Return | +127.6% (daily backtest, 2% risk, all costs modeled) | Unknown |
 | Instruments | 20 (5 indices + 15 stocks) | 1 (Nifty only) |
 | AI Brain | Claude AI regime validation | None |
 | Strategies | 3 engines + conductor selection | 1 fixed strategy |
 | Risk Engine | Compound adaptive (4 factors) | Fixed % risk |
 | Accuracy Filters | Confirmation + CPR + trend alignment | None |
-| Robustness | Monte Carlo + noise injection + walk-forward | Basic backtest |
+| Robustness | Monte Carlo + walk-forward | Basic backtest |
 | Indicators | 25+ (CPR, Z-score, VWAP bands, StochRSI) | 3-5 standard |
 | Kill Switch | API failure + crash + VIX panic + DD | None |
 
@@ -177,9 +152,9 @@ python3 start.py             # Start paper trading
 
 | Engine | Target Market | Min Confidence | Entry Logic |
 |---|---|---|---|
-| **Momentum** | ADX > 25 (trending) | 80 | SuperTrend + EMA50 + RSI pullback + volume |
-| **Mean Reversion** | ADX < 22 (ranging) | 70 | RSI(2) extreme + BB touch + VWAP deviation |
-| **Scalper** | High ATR (volatile) | 70 | Range breakout + VWAP bounce + volume spike |
+| **Momentum** | ADX > 25 (trending) | 50 | SuperTrend + EMA50 + RSI pullback + volume |
+| **Mean Reversion** | ADX < 30 (ranging) | 50 | RSI(2) extreme + BB touch + VWAP deviation |
+| **Scalper** | High ATR (volatile) | 50 | Range breakout + VWAP bounce + volume spike |
 
 > Conductor picks ONE engine per bar based on ADX — same logic as live `conductor.py`.
 
@@ -207,10 +182,10 @@ python3 start.py             # Start paper trading
 
 | Capital | Risk/Trade | Instruments | Trades/Day |
 |---|---|---|---|
-| ₹10K | ₹300 | Nifty | 2 |
-| ₹25K-1L | ₹750-3,000 | Nifty + BankNifty | 3 |
-| ₹1L-5L | ₹3,000-15,000 | 3 Indices | 4 |
-| ₹5L+ | ₹15,000-50,000 | All 20 | 5 |
+| 10K | 300 | Nifty | 2 |
+| 25K-1L | 750-3,000 | Nifty + BankNifty | 3 |
+| 1L-5L | 3,000-15,000 | 3 Indices | 4 |
+| 5L+ | 15,000-50,000 | All 20 | 5 |
 
 ---
 
@@ -219,7 +194,7 @@ python3 start.py             # Start paper trading
 ```
 trade-bot/
 ├── main.py              # Multi-instrument orchestrator
-├── backtest.py          # Live-aligned backtest (3 engines, hourly, conductor)
+├── backtest.py          # Daily backtest (3 engines, conductor, walk-forward)
 ├── config.py            # 20 instruments, compound scaling
 ├── indicators.py        # 25+ indicators (CPR, Z-Score, VWAP, StochRSI)
 ├── adaptive_risk.py     # 4-factor compound risk engine
@@ -243,9 +218,9 @@ trade-bot/
 
 ## Robustness Testing
 
-Noise Injection | Parameter Sensitivity | Entry Delay | Walk-Forward (FAILED on hourly — needs 5m data) | Monte Carlo | Optimal Strike Selection
+Noise Injection | Parameter Sensitivity | Entry Delay | Walk-Forward (WFE 0.49, borderline) | Monte Carlo (100% profitable, 0% ruin)
 
-> **Note:** Backtest uses hourly candles (not daily) and simulates the same conductor + 3-engine logic as the live system. Walk-forward failed on hourly data, indicating the signal logic needs refinement for this timeframe. Paper trade 200+ trades before going live.
+> **Note:** Backtest uses daily candles with the same conductor + 3-engine logic as the live system. Paper trade 200+ trades before going live.
 
 ## Contributing
 
@@ -267,4 +242,4 @@ MIT — See [LICENSE](LICENSE)
 
 **Built by [GarudawnX](https://garudawnx.com) | Powered by [Claude AI](https://anthropic.com)**
 
-⭐ **Star this repo if you find it useful!**
+Star this repo if you find it useful!

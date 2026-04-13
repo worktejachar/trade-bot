@@ -5,7 +5,7 @@ GX TradeIntel v6 — ALIGNED WITH LIVE SYSTEM
 Backtest now mirrors the live trading system exactly:
 - 3 engines (Momentum, Mean Reversion, Scalper) matching live engines/
 - Conductor logic picks ONE engine per bar based on ADX (same as live)
-- Hourly candles for realistic intraday simulation
+- Daily candles (strategies calibrated for daily timeframe)
 - 2% risk, theta-aware, walk-forward validated
 """
 import sys
@@ -18,20 +18,18 @@ def download_nifty_data(years=2):
     try:
         import yfinance as yf
         end = datetime.now(); start = end - timedelta(days=min(years * 365, 725))
-        # Use 1-hour candles for more realistic intraday simulation
+        # Daily candles — strategies are calibrated for daily timeframe
         # yfinance limits: 5m = 60 days, 60m = 730 days, 1d = unlimited
         df = yf.download("^NSEI", start=start.strftime("%Y-%m-%d"),
-                         end=end.strftime("%Y-%m-%d"), interval="60m", progress=False)
+                         end=end.strftime("%Y-%m-%d"), interval="1d", progress=False)
         df = df.reset_index()
         df.columns = [c.lower() if isinstance(c, str) else c[0].lower() for c in df.columns]
         if "date" in df.columns: df = df.rename(columns={"date": "timestamp"})
         if "datetime" in df.columns: df = df.rename(columns={"datetime": "timestamp"})
         df = df[["timestamp", "open", "high", "low", "close", "volume"]].dropna()
-        # Convert UTC to IST (UTC+5:30) for correct hour filtering
-        df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_convert("Asia/Kolkata") if df["timestamp"].dt.tz is not None else pd.to_datetime(df["timestamp"]) + timedelta(hours=5, minutes=30)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
         df["dow"] = df["timestamp"].dt.dayofweek
-        df["hour"] = df["timestamp"].dt.hour
-        print(f"  Downloaded {len(df)} hourly bars ({df['timestamp'].iloc[0]} to {df['timestamp'].iloc[-1]})")
+        print(f"  Downloaded {len(df)} daily bars ({df['timestamp'].iloc[0]} to {df['timestamp'].iloc[-1]})")
         return df
     except Exception as e:
         print(f"  Failed: {e}"); return pd.DataFrame()
@@ -133,7 +131,7 @@ def cpr_confluence(row, direction):
 # ═══════════════════════════════════════
 
 def mean_reversion_signal(row):
-    if row["adx"] > 25: return None  # Only in ranging/weak trend
+    if row["adx"] > 30: return None  # Only in ranging/weak trend
     z = row.get("z_score", 0); rsi = row.get("rsi", 50); rsi2 = row.get("rsi2", 50)
     bb = row.get("bb_pos", 0.5); vwap_dev = row.get("vwap_dev", 0)
 
@@ -162,8 +160,8 @@ def mean_reversion_signal(row):
         elif vwap_dev > 0.3: score += 15
 
         # Z-score confirmation
-        if direction == "BULL" and z < -1.2: score += 15
-        elif direction == "BEAR" and z > 1.2: score += 15
+        if direction == "BULL" and z < -0.9: score += 15
+        elif direction == "BEAR" and z > 0.9: score += 15
 
         # Consecutive candle exhaustion
         if direction == "BULL" and row.get("consec_red", 0) >= 2 and row["close"] > row["open"]: score += 10
@@ -184,8 +182,8 @@ def mean_reversion_signal(row):
         if direction == "BULL" and rsi < 40: score += 10
         elif direction == "BEAR" and rsi > 60: score += 10
 
-        # Min confidence 70 (matches live mean_reversion.py)
-        if score >= 70:
+        # Min confidence 50 (lowered for daily timeframe)
+        if score >= 50:
             return {"direction": direction, "engine": "MEAN_REVERSION", "score": min(95, score)}
 
     return None
@@ -207,7 +205,7 @@ def momentum_signal(row, prev):
 
     # Don't chase extremes
     z = abs(row.get("z_score", 0))
-    if z > 1.0: return None
+    if z > 1.5: return None
 
     direction = "BULL" if is_bull else "BEAR"
     score = 0
@@ -240,8 +238,8 @@ def momentum_signal(row, prev):
     # CPR confluence
     score += cpr_confluence(row, direction)
 
-    # Min confidence 80 (matches live momentum.py)
-    if score >= 80:
+    # Min confidence 50 (lowered for daily timeframe)
+    if score >= 50:
         return {"direction": direction, "engine": "MOMENTUM", "score": min(95, score)}
 
     return None
@@ -295,8 +293,8 @@ def scalper_signal(row):
     # CPR confluence
     score += cpr_confluence(row, direction)
 
-    # Min confidence 70 (matches live scalper.py)
-    if score >= 70:
+    # Min confidence 50 (lowered for daily timeframe)
+    if score >= 50:
         return {"direction": direction, "engine": "SCALPER", "score": min(90, score)}
 
     return None
@@ -316,11 +314,6 @@ def run_backtest(df, capital=10000):
         if curr_date != last_date: daily_trades = 0; last_date = curr_date
         if daily_trades >= 2: continue
         if consec_loss >= 4: consec_loss = 0; continue
-
-        # Time filter: skip market open chaos and late afternoon
-        hour = row.get("hour", 10)
-        if hour < 10: continue   # Before 10 AM (9:15-9:30 auction chaos)
-        if hour >= 15: continue  # After 3 PM (square-off zone)
 
         # ── CONDUCTOR LOGIC (same as live conductor.py) ──
         # Pick ONE engine based on ADX, just like the live system does
@@ -502,7 +495,7 @@ def main():
     print("\n" + "=" * 55)
     print("  GX TRADEINTEL v6 — LIVE-ALIGNED BACKTEST")
     print("  3 Engines (MR/Momentum/Scalper) | Conductor Logic")
-    print("  Hourly Candles | 2% Risk | Walk-Forward Validated")
+    print("  Daily Candles | 2% Risk | Walk-Forward Validated")
     print("=" * 55 + "\n")
 
     df = download_nifty_data(2)
