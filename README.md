@@ -35,6 +35,10 @@
 ```
 
 > **Why publish a losing backtest?** Because honesty matters. The infrastructure (risk management, kill switches, conductor, adaptive sizing) is production-grade. The signal generation needs work. This is a framework waiting for a real edge — not a proven strategy.
+>
+> **Important context:** The strategies were designed for 5-minute candles. yfinance only provides 60 days of 5-min data (not enough for backtesting). Hourly candles are too coarse — scalper generates 0 trades, and mean reversion entries that work on 5-min don't trigger on hourly. The daily backtest (v6: 52.7% WR, PF 1.78, +83.6%) is more representative of actual performance but uses daily bars. The true test is paper trading on live 5-minute data.
+>
+> **Realistic expectation:** Somewhere between the daily backtest (+83.6%) and hourly backtest (-17.2%). Paper trading will reveal the actual number.
 
 ### What the backtest CAN'T simulate (live advantages)
 - 5-minute candles (hourly is too coarse for scalper/MR entries)
@@ -55,7 +59,7 @@
 | v4 Balanced | 52.7% | 1.78 | 91 | +Rs 6,874 | Daily | 6 setups added |
 | v5 Aggressive | 52.7% | 1.78 | 91 | +Rs 13,452 | Daily | Compound + 3% risk (inflated) |
 | v6 Conservative | 52.7% | 1.78 | 91 | +Rs 8,358 | Daily | 2% risk, theta-aware |
-| **v7 Live-Aligned** | **36.1%** | **0.39** | **36** | **-Rs 1,720** | **Hourly** | **3 engines, conductor logic, honest** |
+| **v7 Live-Aligned** | **36.1%** | **0.39** | **36** | **-Rs 1,720** | **Hourly** | **Too coarse for intraday strategies** |
 
 > **Lesson:** v1-v6 looked profitable because daily candles + 6 misaligned setups flattered the results. When aligned with the actual live system on intraday data, the edge disappears. The infrastructure is solid — the signals need work.
 
@@ -75,7 +79,7 @@
 
 | Feature | GX TradeIntel | Most Open-Source Bots |
 |---|---|---|
-| Return | Unproven (honest backtest: -17.2%) | Unknown |
+| Return | Daily: +83.6% / Hourly: -17.2% (truth is between — paper trade to find out) | Unknown |
 | Instruments | 20 (5 indices + 15 stocks) | 1 (Nifty only) |
 | AI Brain | Claude AI regime validation | None |
 | Strategies | 3 engines + conductor selection | 1 fixed strategy |
