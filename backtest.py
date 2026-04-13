@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-GX TradeIntel v6 — BEST OF BOTH
-==================================
-Target: 55%+ WR (from v3) + Rs 10K+ profit (from v2)
-Method: Keep v3 accuracy filters + add MORE high-quality setups
-New setups: EMA pullback, VWAP band, consecutive reversal, range bounce
-All require confirmation candle (mandatory).
+GX TradeIntel v6 — ALIGNED WITH LIVE SYSTEM
+==============================================
+Backtest now mirrors the live trading system exactly:
+- 3 engines (Momentum, Mean Reversion, Scalper) matching live engines/
+- Conductor logic picks ONE engine per bar based on ADX (same as live)
+- Hourly candles for realistic intraday simulation
+- 2% risk, theta-aware, walk-forward validated
 """
 import sys
 from datetime import datetime, timedelta
@@ -16,14 +17,21 @@ import pandas as pd
 def download_nifty_data(years=2):
     try:
         import yfinance as yf
-        end = datetime.now(); start = end - timedelta(days=years * 365)
+        end = datetime.now(); start = end - timedelta(days=min(years * 365, 725))
+        # Use 1-hour candles for more realistic intraday simulation
+        # yfinance limits: 5m = 60 days, 60m = 730 days, 1d = unlimited
         df = yf.download("^NSEI", start=start.strftime("%Y-%m-%d"),
-                         end=end.strftime("%Y-%m-%d"), interval="1d", progress=False)
+                         end=end.strftime("%Y-%m-%d"), interval="60m", progress=False)
         df = df.reset_index()
         df.columns = [c.lower() if isinstance(c, str) else c[0].lower() for c in df.columns]
         if "date" in df.columns: df = df.rename(columns={"date": "timestamp"})
+        if "datetime" in df.columns: df = df.rename(columns={"datetime": "timestamp"})
         df = df[["timestamp", "open", "high", "low", "close", "volume"]].dropna()
-        print(f"  Downloaded {len(df)} days ({df['timestamp'].iloc[0].date()} to {df['timestamp'].iloc[-1].date()})")
+        # Convert UTC to IST (UTC+5:30) for correct hour filtering
+        df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_convert("Asia/Kolkata") if df["timestamp"].dt.tz is not None else pd.to_datetime(df["timestamp"]) + timedelta(hours=5, minutes=30)
+        df["dow"] = df["timestamp"].dt.dayofweek
+        df["hour"] = df["timestamp"].dt.hour
+        print(f"  Downloaded {len(df)} hourly bars ({df['timestamp'].iloc[0]} to {df['timestamp'].iloc[-1]})")
         return df
     except Exception as e:
         print(f"  Failed: {e}"); return pd.DataFrame()
@@ -73,25 +81,24 @@ def add_indicators(df):
     df["pivot"] = (df["high"].shift(1) + df["low"].shift(1) + df["close"].shift(1)) / 3
     df["s1"] = 2 * df["pivot"] - df["high"].shift(1)
     df["r1"] = 2 * df["pivot"] - df["low"].shift(1)
-    # EMA distance for pullback detection
     df["dist_ema21"] = (c - df["ema21"]) / atr14.replace(0, np.nan)
     df["dist_ema50"] = (c - df["ema50"]) / atr14.replace(0, np.nan)
-    # Consecutive candle tracking
     df["green"] = (c > df["open"]).astype(int)
     df["red"] = (c < df["open"]).astype(int)
     df["consec_red"] = df["red"].rolling(3).sum()
     df["consec_green"] = df["green"].rolling(3).sum()
-    # Range detection: 5-day high/low
     df["range_high"] = df["high"].rolling(5).max()
     df["range_low"] = df["low"].rolling(5).min()
     df["near_range_low"] = ((c - df["range_low"]) / atr14.replace(0, np.nan)) < 0.5
     df["near_range_high"] = ((df["range_high"] - c) / atr14.replace(0, np.nan)) < 0.5
-    df["dow"] = pd.to_datetime(df["timestamp"]).dt.dayofweek
+    # VWAP proxy using cumulative volume-weighted price (resets conceptually per session)
+    df["vwap"] = (c * df["volume"]).rolling(7).sum() / df["volume"].rolling(7).sum().replace(0, np.nan)
+    df["vwap_dev"] = abs(c - df["vwap"]) / c * 100
     return df
 
 
 # ═══════════════════════════════════════
-# ACCURACY FILTERS (from v3 — kept intact)
+# ACCURACY FILTERS (shared by all engines)
 # ═══════════════════════════════════════
 
 def confirmation_check(row, direction):
@@ -118,193 +125,185 @@ def cpr_confluence(row, direction):
         elif abs(price - row["pivot"]) < tol: score += 10
     return score
 
-def trend_alignment(row, direction):
-    adx = row["adx"]; ema_dir = row["ema_cross"]
-    if adx > 30:
-        if direction == "BULL" and ema_dir < 0: return -20
-        if direction == "BEAR" and ema_dir > 0: return -20
-    if adx < 20: return 10
-    return 0
+
+# ═══════════════════════════════════════
+# ENGINE 1: MEAN REVERSION (matches engines/mean_reversion.py)
+# Target: RANGING markets (ADX < 22)
+# Combines: Z-score, RSI(2), BB, VWAP deviation, consecutive reversal
+# ═══════════════════════════════════════
+
+def mean_reversion_signal(row):
+    if row["adx"] > 25: return None  # Only in ranging/weak trend
+    z = row.get("z_score", 0); rsi = row.get("rsi", 50); rsi2 = row.get("rsi2", 50)
+    bb = row.get("bb_pos", 0.5); vwap_dev = row.get("vwap_dev", 0)
+
+    # Score signals like live mean_reversion.py
+    for direction in ["BULL", "BEAR"]:
+        score = 0
+
+        # RSI(2) extremes (live: +25 for <10, +15 for <20)
+        if direction == "BULL":
+            if rsi2 < 10: score += 25
+            elif rsi2 < 20: score += 15
+        else:
+            if rsi2 > 90: score += 25
+            elif rsi2 > 80: score += 15
+
+        # Bollinger Bands (live: +20 for touch, +12 for proximity)
+        if direction == "BULL":
+            if bb < 0.1: score += 20
+            elif bb < 0.2: score += 12
+        else:
+            if bb > 0.9: score += 20
+            elif bb > 0.8: score += 12
+
+        # VWAP deviation (live: +20 for >0.5%, +15 for >0.3%)
+        if vwap_dev > 0.5: score += 20
+        elif vwap_dev > 0.3: score += 15
+
+        # Z-score confirmation
+        if direction == "BULL" and z < -1.2: score += 15
+        elif direction == "BEAR" and z > 1.2: score += 15
+
+        # Consecutive candle exhaustion
+        if direction == "BULL" and row.get("consec_red", 0) >= 2 and row["close"] > row["open"]: score += 10
+        if direction == "BEAR" and row.get("consec_green", 0) >= 2 and row["close"] < row["open"]: score += 10
+
+        # Volume exhaustion (low volume = exhaustion)
+        if row.get("vol_ratio", 1) < 0.8: score += 10
+
+        # Confirmation candle (mandatory)
+        conf = confirmation_check(row, direction)
+        if conf < 10: continue
+        score += conf
+
+        # CPR confluence
+        score += cpr_confluence(row, direction)
+
+        # RSI agreement
+        if direction == "BULL" and rsi < 40: score += 10
+        elif direction == "BEAR" and rsi > 60: score += 10
+
+        # Min confidence 70 (matches live mean_reversion.py)
+        if score >= 70:
+            return {"direction": direction, "engine": "MEAN_REVERSION", "score": min(95, score)}
+
+    return None
 
 
 # ═══════════════════════════════════════
-# SETUP 1: Z-SCORE REVERSION (from v3)
+# ENGINE 2: MOMENTUM (matches engines/momentum.py)
+# Target: TRENDING markets (ADX > 25)
+# Requires: SuperTrend + EMA50 + ADX alignment
 # ═══════════════════════════════════════
 
-def zscore_signals(row):
-    signals = []
-    z = row.get("z_score", 0); rsi = row.get("rsi", 50); bb = row.get("bb_pos", 0.5)
-    if row["adx"] > 28: return signals
+def momentum_signal(row, prev):
+    if row["adx"] < 25: return None  # Only in trending markets
+    if row["st_direction"] != prev.get("st_direction", 0): return None  # Trend must be consistent
 
-    if z < -1.2:
-        conf = confirmation_check(row, "BULL")
-        if conf >= 10:
-            base = min(70, int(abs(z) * 20)) + conf + cpr_confluence(row, "BULL") + trend_alignment(row, "BULL")
-            if rsi < 40: base += 15
-            elif rsi < 50: base += 5
-            else: base -= 15
-            if bb < 0.2: base += 10
-            if row.get("prev_z", 0) < -0.5: base += 10
-            if base >= 55:
-                signals.append({"direction": "BULL", "engine": "MR_ZSCORE", "score": min(95, base)})
-
-    elif z > 1.2:
-        conf = confirmation_check(row, "BEAR")
-        if conf >= 10:
-            base = min(70, int(abs(z) * 20)) + conf + cpr_confluence(row, "BEAR") + trend_alignment(row, "BEAR")
-            if rsi > 60: base += 15
-            elif rsi > 50: base += 5
-            else: base -= 15
-            if bb > 0.8: base += 10
-            if row.get("prev_z", 0) > 0.5: base += 10
-            if base >= 55:
-                signals.append({"direction": "BEAR", "engine": "MR_ZSCORE", "score": min(95, base)})
-    return signals
-
-
-# ═══════════════════════════════════════
-# SETUP 2: EMA PULLBACK REVERSION (NEW)
-# Price touches EMA21 in range market + bounces
-# ═══════════════════════════════════════
-
-def ema_pullback_signals(row):
-    signals = []
-    if row["adx"] > 25: return signals  # Only in range/weak trend
-    dist = row.get("dist_ema21", 0)
-
-    # Price just touched EMA21 from below and bounced
-    if -0.3 < dist < 0.3:  # Near EMA21
-        conf = confirmation_check(row, "BULL" if row["close"] > row["ema21"] else "BEAR")
-        if conf >= 10:
-            direction = "BULL" if row["close"] > row["ema21"] else "BEAR"
-            base = 50 + conf + cpr_confluence(row, direction)
-            if row["rsi"] < 45 and direction == "BULL": base += 10
-            if row["rsi"] > 55 and direction == "BEAR": base += 10
-            if row["vol_ratio"] < 1.2: base += 5
-            if base >= 55:
-                signals.append({"direction": direction, "engine": "EMA_PULLBACK", "score": min(85, base)})
-    return signals
-
-
-# ═══════════════════════════════════════
-# SETUP 3: CONSECUTIVE CANDLE REVERSAL (NEW)
-# 3+ red candles → green bounce = buy
-# 3+ green candles → red drop = sell
-# ═══════════════════════════════════════
-
-def consecutive_reversal_signals(row):
-    signals = []
-    if row["adx"] > 30: return signals
-
-    # 3 red candles then green = oversold bounce
-    if row.get("consec_red", 0) >= 2 and row["close"] > row["open"]:
-        conf = confirmation_check(row, "BULL")
-        if conf >= 10:
-            base = 55 + conf + cpr_confluence(row, "BULL") + trend_alignment(row, "BULL")
-            if row["rsi"] < 40: base += 10
-            if row["bb_pos"] < 0.25: base += 10
-            if base >= 55:
-                signals.append({"direction": "BULL", "engine": "CONSEC_REV", "score": min(85, base)})
-
-    # 3 green candles then red = overbought drop
-    if row.get("consec_green", 0) >= 2 and row["close"] < row["open"]:
-        conf = confirmation_check(row, "BEAR")
-        if conf >= 10:
-            base = 55 + conf + cpr_confluence(row, "BEAR") + trend_alignment(row, "BEAR")
-            if row["rsi"] > 60: base += 10
-            if row["bb_pos"] > 0.75: base += 10
-            if base >= 55:
-                signals.append({"direction": "BEAR", "engine": "CONSEC_REV", "score": min(85, base)})
-    return signals
-
-
-# ═══════════════════════════════════════
-# SETUP 4: RANGE S/R BOUNCE (NEW)
-# Near 5-day low with confirmation = buy
-# Near 5-day high with confirmation = sell
-# ═══════════════════════════════════════
-
-def range_bounce_signals(row):
-    signals = []
-    if row["adx"] > 28: return signals
-
-    if row.get("near_range_low", False):
-        conf = confirmation_check(row, "BULL")
-        if conf >= 10:
-            base = 55 + conf + cpr_confluence(row, "BULL") + trend_alignment(row, "BULL")
-            if row["rsi"] < 35: base += 15
-            elif row["rsi"] < 45: base += 5
-            if base >= 55:
-                signals.append({"direction": "BULL", "engine": "RANGE_BOUNCE", "score": min(85, base)})
-
-    if row.get("near_range_high", False):
-        conf = confirmation_check(row, "BEAR")
-        if conf >= 10:
-            base = 55 + conf + cpr_confluence(row, "BEAR") + trend_alignment(row, "BEAR")
-            if row["rsi"] > 65: base += 15
-            elif row["rsi"] > 55: base += 5
-            if base >= 55:
-                signals.append({"direction": "BEAR", "engine": "RANGE_BOUNCE", "score": min(85, base)})
-    return signals
-
-
-# ═══════════════════════════════════════
-# SETUP 5: RSI EXTREME (from v3)
-# ═══════════════════════════════════════
-
-def rsi_extreme_signals(row):
-    signals = []
-    rsi2 = row.get("rsi2", 50); bb = row.get("bb_pos", 0.5)
-    if row["adx"] > 28: return signals
-
-    if rsi2 < 8 and bb < 0.1:
-        conf = confirmation_check(row, "BULL")
-        if conf >= 10:
-            base = 60 + conf + cpr_confluence(row, "BULL") + trend_alignment(row, "BULL")
-            if base >= 55:
-                signals.append({"direction": "BULL", "engine": "MR_RSI", "score": min(90, base)})
-    elif rsi2 > 92 and bb > 0.9:
-        conf = confirmation_check(row, "BEAR")
-        if conf >= 10:
-            base = 60 + conf + cpr_confluence(row, "BEAR") + trend_alignment(row, "BEAR")
-            if base >= 55:
-                signals.append({"direction": "BEAR", "engine": "MR_RSI", "score": min(90, base)})
-    return signals
-
-
-# ═══════════════════════════════════════
-# SETUP 6: MOMENTUM PULLBACK (from v3)
-# ═══════════════════════════════════════
-
-def momentum_signals(row, prev):
-    signals = []
-    if row["adx"] < 25: return signals
-    if row["st_direction"] != prev.get("st_direction", 0): return signals
     is_bull = row["st_direction"] > 0 and row["price_vs_ema50"] > 0
     is_bear = row["st_direction"] < 0 and row["price_vs_ema50"] < 0
-    if not is_bull and not is_bear: return signals
+    if not is_bull and not is_bear: return None
+
+    # Don't chase extremes
     z = abs(row.get("z_score", 0))
-    if z > 1.0: return signals
+    if z > 1.0: return None
 
     direction = "BULL" if is_bull else "BEAR"
     score = 0
+
+    # Tier 1: Trend confirmation (ADX strength)
+    if row["adx"] > 30: score += 20
+    elif row["adx"] > 25: score += 10
+
+    # Tier 2: Entry setup — RSI pullback in trend direction
     if is_bull and 35 < row["rsi"] < 55: score += 20
     if is_bear and 45 < row["rsi"] < 65: score += 20
+
+    # EMA alignment
+    if is_bull and row["ema_cross"] > 0: score += 10
+    if is_bear and row["ema_cross"] < 0: score += 10
+
+    # BB position (pullback to middle)
     if is_bull and row["bb_pos"] < 0.5: score += 10
     if is_bear and row["bb_pos"] > 0.5: score += 10
-    score += confirmation_check(row, direction)
-    if row["adx"] > 30: score += 15
-    elif row["adx"] > 25: score += 5
-    if row["vol_ratio"] > 1.2: score += 10
+
+    # Tier 3: Volume confirmation (live: min 1.5x, bonus at 2.0x)
+    if row.get("vol_ratio", 1) >= 2.0: score += 15
+    elif row.get("vol_ratio", 1) >= 1.5: score += 10
+
+    # Confirmation candle (mandatory)
+    conf = confirmation_check(row, direction)
+    if conf < 10: return None
+    score += conf
+
+    # CPR confluence
     score += cpr_confluence(row, direction)
 
-    if score >= 50:
-        signals.append({"direction": direction, "engine": "MOMENTUM", "score": min(90, score)})
-    return signals
+    # Min confidence 80 (matches live momentum.py)
+    if score >= 80:
+        return {"direction": direction, "engine": "MOMENTUM", "score": min(95, score)}
+
+    return None
 
 
 # ═══════════════════════════════════════
-# BACKTEST ENGINE
+# ENGINE 3: SCALPER (matches engines/scalper.py)
+# Target: VOLATILE markets (high ATR, range breakout)
+# Uses: Range breakout + VWAP bounce + volume spike
+# ═══════════════════════════════════════
+
+def scalper_signal(row):
+    atr = row.get("atr", 0)
+    if atr <= 0: return None
+
+    # Volatility check — scalper needs movement
+    range_pct = row.get("day_range_pct", 0)
+    if range_pct < 0.3: return None  # Not enough intraday range
+
+    score = 0; direction = None
+
+    # Range breakout: close near high or low of recent range
+    if row.get("near_range_high", False) and row["close"] > row["open"]:
+        direction = "BULL"; score += 25  # Breakout above range
+    elif row.get("near_range_low", False) and row["close"] < row["open"]:
+        direction = "BEAR"; score += 25  # Breakdown below range
+
+    # VWAP bounce
+    vwap_dev = row.get("vwap_dev", 0)
+    if direction is None and vwap_dev > 0.15:
+        if row["close"] > row.get("vwap", row["close"]):
+            direction = "BULL"; score += 20
+        else:
+            direction = "BEAR"; score += 20
+
+    if direction is None: return None
+
+    # Volume spike (live: min 2.0x for scalper)
+    if row.get("vol_ratio", 1) >= 2.0: score += 20
+    elif row.get("vol_ratio", 1) >= 1.5: score += 10
+
+    # SuperTrend alignment bonus
+    if direction == "BULL" and row["st_direction"] > 0: score += 15
+    elif direction == "BEAR" and row["st_direction"] < 0: score += 15
+
+    # Confirmation candle
+    conf = confirmation_check(row, direction)
+    if conf < 10: return None
+    score += conf
+
+    # CPR confluence
+    score += cpr_confluence(row, direction)
+
+    # Min confidence 70 (matches live scalper.py)
+    if score >= 70:
+        return {"direction": direction, "engine": "SCALPER", "score": min(90, score)}
+
+    return None
+
+
+# ═══════════════════════════════════════
+# BACKTEST ENGINE (aligned with live main.py)
 # ═══════════════════════════════════════
 
 def run_backtest(df, capital=10000):
@@ -318,53 +317,90 @@ def run_backtest(df, capital=10000):
         if daily_trades >= 2: continue
         if consec_loss >= 4: consec_loss = 0; continue
 
-        # ALL 6 setups
-        all_signals = (zscore_signals(row) + ema_pullback_signals(row) +
-                      consecutive_reversal_signals(row) + range_bounce_signals(row) +
-                      rsi_extreme_signals(row) + momentum_signals(row, prev))
+        # Time filter: skip market open chaos and late afternoon
+        hour = row.get("hour", 10)
+        if hour < 10: continue   # Before 10 AM (9:15-9:30 auction chaos)
+        if hour >= 15: continue  # After 3 PM (square-off zone)
 
-        if not all_signals: continue
-        all_signals.sort(key=lambda s: s["score"], reverse=True)
+        # ── CONDUCTOR LOGIC (same as live conductor.py) ──
+        # Pick ONE engine based on ADX, just like the live system does
+        adx = row.get("adx", 20)
+        if adx > 25:
+            active_engine = "MOMENTUM"
+        elif adx < 22:
+            active_engine = "MEAN_REVERSION"
+        else:
+            active_engine = "MEAN_REVERSION"  # Default to MR in unclear zone
 
-        for signal in all_signals[:2]:
-            if daily_trades >= 2: break
-            score = signal["score"]
-            if score < 55: continue
+        # High volatility override (matches live conductor fallback)
+        atr_ratio = row.get("atr", 0) / row["close"] * 100 if row["close"] > 0 else 0
+        if atr_ratio > 1.5 and adx <= 25:
+            active_engine = "SCALPER"
 
-            if score >= 70: risk_mult = 1.2
-            elif score >= 60: risk_mult = 0.8
-            else: risk_mult = 0.5
+        # ── RUN SELECTED ENGINE ONLY (same as live main.py) ──
+        signal = None
+        if active_engine == "MEAN_REVERSION":
+            signal = mean_reversion_signal(row)
+        elif active_engine == "MOMENTUM":
+            signal = momentum_signal(row, prev)
+        elif active_engine == "SCALPER":
+            signal = scalper_signal(row)
 
-            # Drawdown reduction (same as before)
-            dd_pct = (peak - equity) / peak * 100 if peak > 0 else 0
-            if dd_pct > 15: risk_mult *= 0.25
-            elif dd_pct > 10: risk_mult *= 0.5
-            elif dd_pct > 5: risk_mult *= 0.75
-            if consec_loss >= 2: risk_mult *= 0.5
+        if signal is None: continue
+        score = signal["score"]
 
-            spot = row["close"]; prem = spot * 0.004
-            # 3X CHANGE: Risk 3% of CURRENT equity (was 2% of capital)
-            # This compounds — as equity grows, position size grows
-            max_risk = equity * 0.02 * risk_mult
-            sl_cost = prem * 0.20 * 25
-            if sl_cost <= 0: continue
-            # 3X CHANGE: Max 8 lots (was 5) — bigger positions on strong signals
-            lots = max(1, min(5, int(max_risk / sl_cost)))
-            qty = lots * 25
+        if score >= 70: risk_mult = 1.2
+        elif score >= 60: risk_mult = 0.8
+        else: risk_mult = 0.5
 
-            if i + 1 >= len(df): break
-            nxt = df.iloc[i + 1]
-            move = (nxt["close"] - spot) if signal["direction"] == "BULL" else (spot - nxt["close"])
-            pchg = (move * 0.5) / prem * 100
-            dow = int(row.get("dow", 1))
-            slip = 0.015 if dow in (0, 4) else 0.005  # 3x slippage Mon/Fri
-            slippage_cost = prem * qty * slip * 2
+        # Drawdown reduction
+        dd_pct = (peak - equity) / peak * 100 if peak > 0 else 0
+        if dd_pct > 15: risk_mult *= 0.25
+        elif dd_pct > 10: risk_mult *= 0.5
+        elif dd_pct > 5: risk_mult *= 0.75
+        if consec_loss >= 2: risk_mult *= 0.5
 
-            # Theta-adjusted SL
-            theta_mult = {0: 1.0, 1: 1.0, 2: 1.15, 3: 1.5, 4: 1.0}.get(dow, 1.0)
-            iv_loss = {0: 1.0, 1: 0, 2: 0, 3: 3.0, 4: 0.5}.get(dow, 0)
-            pchg -= iv_loss  # IV crush penalty
-            eff_sl = 20 * theta_mult
+        spot = row["close"]; prem = spot * 0.004
+        max_risk = equity * 0.02 * risk_mult
+        sl_cost = prem * 0.20 * 25
+        if sl_cost <= 0: continue
+        lots = max(1, min(5, int(max_risk / sl_cost)))
+        qty = lots * 25
+
+        if i + 1 >= len(df): break
+        nxt = df.iloc[i + 1]
+        move = (nxt["close"] - spot) if signal["direction"] == "BULL" else (spot - nxt["close"])
+        pchg = (move * 0.5) / prem * 100
+        dow = int(row.get("dow", 1))
+        slip = 0.015 if dow in (0, 4) else 0.005  # 3x slippage Mon/Fri
+        slippage_cost = prem * qty * slip * 2
+
+        # Theta-adjusted SL
+        theta_mult = {0: 1.0, 1: 1.0, 2: 1.15, 3: 1.5, 4: 1.0}.get(dow, 1.0)
+        iv_loss = {0: 1.0, 1: 0, 2: 0, 3: 3.0, 4: 0.5}.get(dow, 0)
+        pchg -= iv_loss  # IV crush penalty
+        eff_sl = 20 * theta_mult
+
+        # Engine-specific exits (matching live config.py targets)
+        if signal["engine"] == "SCALPER":
+            # Scalper: tighter SL, smaller targets, faster exits
+            eff_sl_eng = min(eff_sl, 15)
+            if pchg <= -eff_sl_eng: pnl_u = -prem * (eff_sl_eng/100); result = "LOSS"
+            elif pchg >= 20: pnl_u = prem * 0.20; result = "WIN"
+            elif pchg >= 10: pnl_u = prem * 0.10; result = "WIN"
+            elif pchg >= 3: pnl_u = prem * 0.03; result = "WIN"
+            elif pchg >= 0: pnl_u = move * 0.5; result = "WIN" if pnl_u > 0 else "LOSS"
+            else: pnl_u = move * 0.5; result = "LOSS"
+        elif signal["engine"] == "MOMENTUM":
+            # Momentum: wider SL, bigger targets, hold longer
+            if pchg <= -eff_sl: pnl_u = -prem * (eff_sl/100); result = "LOSS"
+            elif pchg >= 40: pnl_u = prem * 0.40; result = "WIN"
+            elif pchg >= 20: pnl_u = prem * 0.20; result = "WIN"
+            elif pchg >= 8: pnl_u = prem * 0.08; result = "WIN"
+            elif pchg >= 0: pnl_u = move * 0.5; result = "WIN" if pnl_u > 0 else "LOSS"
+            else: pnl_u = move * 0.5; result = "LOSS"
+        else:
+            # Mean Reversion: moderate SL, VWAP-level targets
             if pchg <= -eff_sl: pnl_u = -prem * (eff_sl/100); result = "LOSS"
             elif pchg >= 30: pnl_u = prem * 0.30; result = "WIN"
             elif pchg >= 15: pnl_u = prem * 0.15; result = "WIN"
@@ -372,19 +408,19 @@ def run_backtest(df, capital=10000):
             elif pchg >= 0: pnl_u = move * 0.5; result = "WIN" if pnl_u > 0 else "LOSS"
             else: pnl_u = move * 0.5; result = "LOSS"
 
-            pnl = pnl_u * qty - 150 - slippage_cost
-            if pnl < -max_risk: pnl = -max_risk
-            if result == "WIN": consec_loss = 0
-            else: consec_loss += 1
+        pnl = pnl_u * qty - 150 - slippage_cost
+        if pnl < -max_risk: pnl = -max_risk
+        if result == "WIN": consec_loss = 0
+        else: consec_loss += 1
 
-            equity += pnl; peak = max(peak, equity)
-            dd = (peak - equity) / peak * 100 if peak > 0 else 0
-            max_dd = max(max_dd, dd); daily_trades += 1
-            if equity < capital * 0.2: break
+        equity += pnl; peak = max(peak, equity)
+        dd = (peak - equity) / peak * 100 if peak > 0 else 0
+        max_dd = max(max_dd, dd); daily_trades += 1
+        if equity < capital * 0.2: break
 
-            trades.append({"date": row["timestamp"], "engine": signal["engine"],
-                           "direction": signal["direction"], "score": score,
-                           "result": result, "pnl": round(pnl, 2), "equity": round(equity, 2)})
+        trades.append({"date": row["timestamp"], "engine": signal["engine"],
+                       "direction": signal["direction"], "score": score,
+                       "result": result, "pnl": round(pnl, 2), "equity": round(equity, 2)})
     return trades, max_dd
 
 
@@ -464,14 +500,14 @@ def walk_forward_validation(df, capital=10000, n_folds=4):
 
 def main():
     print("\n" + "=" * 55)
-    print("  GX TRADEINTEL v6 — REALISTIC MODE")
-    print("  v3 Accuracy + Conservative Sizing + Theta-Aware")
-    print("  6 Setups | 2% Risk | Walk-Forward Validated")
+    print("  GX TRADEINTEL v6 — LIVE-ALIGNED BACKTEST")
+    print("  3 Engines (MR/Momentum/Scalper) | Conductor Logic")
+    print("  Hourly Candles | 2% Risk | Walk-Forward Validated")
     print("=" * 55 + "\n")
 
     df = download_nifty_data(2)
     if df.empty: return
-    print("  Computing indicators + 6 setup types...")
+    print("  Computing indicators...")
     df = add_indicators(df)
 
     trades, max_dd = run_backtest(df)
@@ -529,11 +565,12 @@ def main():
 
     print(f"\n  {'='*55}")
     print(f"  VERSION COMPARISON:")
-    print(f"    v1: 44.4% WR | PF 1.43 | 187 trades | Rs  +6,447")
-    print(f"    v2: 46.8% WR | PF 2.04 | 124 trades | Rs +12,558")
-    print(f"    v3: 57.1% WR | PF 2.82 |  35 trades | Rs  +4,393")
-    print(f"    v4: 52.7% WR | PF 1.78 |  91 trades | Rs  +6,874")
-    print(f"    v5: {m['wr']}% WR | PF {m['pf']} | {m['trades']:>3} trades | Rs +{m['net']:,.0f}  ← REALISTIC")
+    print(f"    v1: 44.4% WR | PF 1.43 | 187 trades | Rs  +6,447  (daily, 6 setups)")
+    print(f"    v2: 46.8% WR | PF 2.04 | 124 trades | Rs +12,558  (daily, 6 setups)")
+    print(f"    v3: 57.1% WR | PF 2.82 |  35 trades | Rs  +4,393  (daily, 6 setups)")
+    print(f"    v4: 52.7% WR | PF 1.78 |  91 trades | Rs  +6,874  (daily, 6 setups)")
+    print(f"    v5: 52.7% WR | PF 1.78 |  91 trades | Rs  +8,358  (daily, 2% risk)")
+    print(f"    v6: {m['wr']}% WR | PF {m['pf']} | {m['trades']:>3} trades | Rs {m['net']:>+,.0f}  ← LIVE-ALIGNED")
     print()
     print(f"  BEFORE GOING LIVE:")
     print(f"    Paper trade 200+ trades (est. 6-12 months)")

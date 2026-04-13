@@ -10,90 +10,64 @@
 
 ---
 
-## Performance (2 Years Backtest, 492 Trading Days)
+## Performance — Honest Status
+
+> **This system does not yet have a proven edge.** The backtest below uses hourly candles and the same 3-engine conductor logic as the live system. Previous versions showed profitable results on daily data with 6 misaligned setups — those were misleading.
+
+### Live-Aligned Backtest (Hourly Candles, 3 Engines, 2 Years)
 
 ```
 ═══════════════════════════════════════
-  Win Rate:      52.7%
-  Profit Factor: 1.78
-  Net Profit:    Rs 8,358 on Rs 10,000 (+83.6%)
-  Avg Winner:    Rs 398 per trade
-  Avg Loser:     Rs 250 per trade
-  Risk/Reward:   1:1.59
-  Max Drawdown:  11.7%
-  Expectancy:    Rs 92 per trade
-  Trades:        91 (W:48, L:43)
-  Final Equity:  Rs 18,358
+  Win Rate:      36.1%
+  Profit Factor: 0.39
+  Net Profit:    Rs -1,720 on Rs 10,000 (-17.2%)
+  Avg Winner:    Rs 84 per trade
+  Avg Loser:     Rs 122 per trade
+  Risk/Reward:   1:0.69
+  Max Drawdown:  17.9%
+  Expectancy:    Rs -48 per trade
+  Trades:        36 (W:13, L:23)
+  Final Equity:  Rs 8,280
 ═══════════════════════════════════════
-  Monte Carlo:   100% profitable (1000 simulations)
-  Median Equity: Rs 37,552 (+276%) over 300 trades
-  Ruin Prob:     0.0%
-═══════════════════════════════════════
-  Walk-Forward:  PASSED (WFE > 0.5 all folds)
+  Walk-Forward:  FAILED (avg WFE -0.12)
+  Monte Carlo:   0% profitable, 100% ruin
 ═══════════════════════════════════════
 ```
 
-> **Rs 10,000 grew to Rs 18,358 in 2 years.** Conservative 2% risk sizing, theta/IV-adjusted exits, walk-forward validated.
+> **Why publish a losing backtest?** Because honesty matters. The infrastructure (risk management, kill switches, conductor, adaptive sizing) is production-grade. The signal generation needs work. This is a framework waiting for a real edge — not a proven strategy.
 
-### Evolution (5 Iterations of Improvement)
+### What the backtest CAN'T simulate (live advantages)
+- 5-minute candles (hourly is too coarse for scalper/MR entries)
+- Real option chain data (IV, OI, Greeks, PCR)
+- VIX-based regime adjustment
+- AI conductor with news/sentiment context
+- VWAP from actual tick data
 
-| Version | Win Rate | PF | Trades | Net Profit | Key Change |
-|---|---|---|---|---|---|
-| v1 Basic | 44.4% | 1.43 | 187 | +Rs 6,447 | First working version |
-| v2 Accuracy | 46.8% | 2.04 | 124 | +Rs 12,558 | Options P&L fix |
-| v3 High WR | 57.1% | 2.82 | 35 | +Rs 4,393 | Confirmation filters |
-| v4 Balanced | 52.7% | 1.78 | 91 | +Rs 6,874 | 6 setups added |
-| v5 Aggressive | 52.7% | 1.78 | 91 | +Rs 13,452 | Compound + 3% risk (inflated) |
-| **v6 Honest** | **52.7%** | **1.78** | **91** | **+Rs 8,358** | **2% risk, theta-aware, walk-forward validated** |
+**The live system may perform differently.** Paper trading is the only way to find out.
 
-### Engine Breakdown (5 Strategies)
+### Evolution (7 Iterations — Lessons in Honesty)
+
+| Version | Win Rate | PF | Trades | Net Profit | Data | Key Change |
+|---|---|---|---|---|---|---|
+| v1 Basic | 44.4% | 1.43 | 187 | +Rs 6,447 | Daily | First working version |
+| v2 Accuracy | 46.8% | 2.04 | 124 | +Rs 12,558 | Daily | Options P&L fix |
+| v3 High WR | 57.1% | 2.82 | 35 | +Rs 4,393 | Daily | Confirmation filters |
+| v4 Balanced | 52.7% | 1.78 | 91 | +Rs 6,874 | Daily | 6 setups added |
+| v5 Aggressive | 52.7% | 1.78 | 91 | +Rs 13,452 | Daily | Compound + 3% risk (inflated) |
+| v6 Conservative | 52.7% | 1.78 | 91 | +Rs 8,358 | Daily | 2% risk, theta-aware |
+| **v7 Live-Aligned** | **36.1%** | **0.39** | **36** | **-Rs 1,720** | **Hourly** | **3 engines, conductor logic, honest** |
+
+> **Lesson:** v1-v6 looked profitable because daily candles + 6 misaligned setups flattered the results. When aligned with the actual live system on intraday data, the edge disappears. The infrastructure is solid — the signals need work.
+
+### Engine Breakdown (3 Engines — Matching Live System)
 
 | Engine | Trades | Win Rate | Net P&L | What It Does |
 |---|---|---|---|---|
-| **Momentum** | 17 | 58.8% | +Rs 3,893 | Pullback entries in trends |
-| **Consec Reversal** | 39 | 48.7% | +Rs 1,752 | 3-candle reversal patterns |
-| **EMA Pullback** | 13 | 61.5% | +Rs 1,501 | EMA21 touch + bounce |
-| **MR Z-Score** | 10 | 60.0% | +Rs 940 | Z-score extreme snap-back |
-| **Range Bounce** | 12 | 41.7% | +Rs 272 | 5-day high/low bounce |
+| **Momentum** | 21 | 38.1% | -Rs 456 | Pullback entries in ADX>25 trends |
+| **Mean Reversion** | 15 | 33.3% | -Rs 1,265 | RSI/BB/VWAP snap-back in ranging |
+| **Scalper** | 0 | — | — | Range breakout + VWAP bounce (no signals on hourly) |
 
-### Monthly P&L (13 Profitable / 5 Losing)
-
-| Month | Trades | Win Rate | P&L |
-|---|---|---|---|
-| **Dec 2025** | **14** | **92.9%** | **+Rs 4,561** |
-| **Dec 2024** | **5** | **60.0%** | **+Rs 1,240** |
-| **Feb 2025** | **2** | **100%** | **+Rs 1,062** |
-| May 2025 | 11 | 45.5% | +Rs 888 |
-| **Nov 2025** | **10** | **70.0%** | **+Rs 634** |
-| Apr 2025 | 1 | 100% | +Rs 468 |
-| Mar 2025 | 1 | 100% | +Rs 458 |
-| Nov 2024 | 3 | 66.7% | +Rs 388 |
-| Sep 2025 | 5 | 40.0% | +Rs 330 |
-| Jul 2025 | 4 | 50.0% | +Rs 322 |
-| Jan 2025 | 2 | 50.0% | +Rs 316 |
-| Feb 2026 | 8 | 50.0% | +Rs 199 |
-| Jul 2024 | 3 | 33.3% | +Rs 25 |
-| Oct 2025 | 3 | 33.3% | -Rs 157 |
-| Sep 2024 | 2 | 0.0% | -Rs 342 |
-| Aug 2024 | 3 | 0.0% | -Rs 445 |
-| Jan 2026 | 4 | 25.0% | -Rs 681 |
-| Jun 2025 | 10 | 20.0% | -Rs 910 |
-
-> **Best month:** Dec 2025 (+Rs 4,561, 92.9% WR). **Worst month:** Jun 2025 (-Rs 910). Honest numbers with 2% risk and theta-adjusted exits.
-
-### Monte Carlo (1000 Simulations x 300 Trades)
-
-| Metric | Value |
-|---|---|
-| **Median Final Equity** | **Rs 37,552 (+276%)** |
-| Best Case (95th) | Rs 47,289 (+373%) |
-| Worst Case (5th) | Rs 28,444 (+184%) |
-| Avg Max Drawdown | 12.7% |
-| Worst Drawdown | 45.8% |
-| Ruin Probability | 0.0% |
-| **Profitable Runs** | **100%** |
-
-> Even worst case: +184% return. Zero ruin across 1000 simulations.
+> Scalper generates 0 trades on hourly data — it needs 5-minute candles to detect ORB and VWAP bounces. This is expected and will only work in the live system.
 
 ---
 
@@ -101,10 +75,10 @@
 
 | Feature | GX TradeIntel | Most Open-Source Bots |
 |---|---|---|
-| Return | +83.6% (walk-forward validated) | Unknown |
+| Return | Unproven (honest backtest: -17.2%) | Unknown |
 | Instruments | 20 (5 indices + 15 stocks) | 1 (Nifty only) |
 | AI Brain | Claude AI regime validation | None |
-| Strategies | 5 engines + auto-disable | 1 fixed strategy |
+| Strategies | 3 engines + conductor selection | 1 fixed strategy |
 | Risk Engine | Compound adaptive (4 factors) | Fixed % risk |
 | Accuracy Filters | Confirmation + CPR + trend alignment | None |
 | Robustness | Monte Carlo + noise injection + walk-forward | Basic backtest |
@@ -129,7 +103,7 @@ RELIANCE | TCS | HDFC BANK | INFOSYS | ICICI BANK | SBI | BAJAJ FINANCE | ITC | 
 
 ```
 ┌──────────────┐     ┌───────────────┐     ┌──────────────┐
-│  MULTI-SCAN  │────>│  AI CONDUCTOR │────>│  5 STRATEGY  │
+│  MULTI-SCAN  │────>│  AI CONDUCTOR │────>│  3 STRATEGY  │
 │  5 Indices   │     │  Regime Det.  │     │   ENGINES    │
 │  15 Stocks   │     │  Claude API   │     │  Best Signal │
 │  Live Data   │     │  Rule Fallback│     │  Across All  │
@@ -167,26 +141,24 @@ python3 start.py             # Start paper trading
 
 ---
 
-## 6 Accuracy Filters (52.7% Win Rate)
+## Accuracy Filters
 
 | Filter | Impact |
 |---|---|
 | **Confirmation Candle** | MANDATORY — no entry without green/red candle proof |
 | **CPR Confluence** | Entry near Pivot/S1/R1 = +15 score |
-| **Trend Alignment** | -20 penalty for mean reversion against ADX > 30 |
-| **Z-Score 1.2+** | Only truly stretched prices |
 | **RSI Agreement** | RSI must confirm direction |
-| **Score Threshold 55** | Bottom 50% of setups filtered out |
+| **Volume Confirmation** | Min 1.5-2.0x average volume |
 
-## 5 Strategy Engines
+## 3 Strategy Engines (Matching Live System)
 
-| Engine | Win Rate | Entry Logic |
-|---|---|---|
-| **MR Z-Score** | 60.0% | Z > 1.2 + confirmation + CPR + RSI agreement |
-| **Momentum** | 58.8% | Pullback in established trend + confirmation |
-| **EMA Pullback** | 61.5% | EMA21 touch + bounce in range market |
-| **Consec Reversal** | 48.7% | 3+ same-color candles → reversal candle |
-| **Range Bounce** | 41.7% | Near 5-day high/low + confirmation |
+| Engine | Target Market | Min Confidence | Entry Logic |
+|---|---|---|---|
+| **Momentum** | ADX > 25 (trending) | 80 | SuperTrend + EMA50 + RSI pullback + volume |
+| **Mean Reversion** | ADX < 22 (ranging) | 70 | RSI(2) extreme + BB touch + VWAP deviation |
+| **Scalper** | High ATR (volatile) | 70 | Range breakout + VWAP bounce + volume spike |
+
+> Conductor picks ONE engine per bar based on ADX — same logic as live `conductor.py`.
 
 ## Risk Management
 
@@ -224,7 +196,7 @@ python3 start.py             # Start paper trading
 ```
 trade-bot/
 ├── main.py              # Multi-instrument orchestrator
-├── backtest.py          # 5-version optimized backtest + Monte Carlo
+├── backtest.py          # Live-aligned backtest (3 engines, hourly, conductor)
 ├── config.py            # 20 instruments, compound scaling
 ├── indicators.py        # 25+ indicators (CPR, Z-Score, VWAP, StochRSI)
 ├── adaptive_risk.py     # 4-factor compound risk engine
@@ -248,7 +220,9 @@ trade-bot/
 
 ## Robustness Testing
 
-Noise Injection | Parameter Sensitivity | Entry Delay | **Walk-Forward (PASSED, WFE > 0.5 all folds)** | Monte Carlo (100% profitable) | Optimal Strike Selection
+Noise Injection | Parameter Sensitivity | Entry Delay | Walk-Forward (FAILED on hourly — needs 5m data) | Monte Carlo | Optimal Strike Selection
+
+> **Note:** Backtest uses hourly candles (not daily) and simulates the same conductor + 3-engine logic as the live system. Walk-forward failed on hourly data, indicating the signal logic needs refinement for this timeframe. Paper trade 200+ trades before going live.
 
 ## Contributing
 
