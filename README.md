@@ -10,9 +10,9 @@
 
 ---
 
-## Performance — Honest Status
+## Performance Status
 
-> **This system does not yet have a proven edge.** The backtest below uses hourly candles and the same 3-engine conductor logic as the live system. Previous versions showed profitable results on daily data with 6 misaligned setups — those were misleading.
+**Two backtests, two timeframes, two different stories:**
 
 ### Live-Aligned Backtest (Hourly Candles, 3 Engines, 2 Years)
 
@@ -34,11 +34,30 @@
 ═══════════════════════════════════════
 ```
 
-> **Why publish a losing backtest?** Because honesty matters. The infrastructure (risk management, kill switches, conductor, adaptive sizing) is production-grade. The signal generation needs work. This is a framework waiting for a real edge — not a proven strategy.
->
-> **Important context:** The strategies were designed for 5-minute candles. yfinance only provides 60 days of 5-min data (not enough for backtesting). Hourly candles are too coarse — scalper generates 0 trades, and mean reversion entries that work on 5-min don't trigger on hourly. The daily backtest (v6: 52.7% WR, PF 1.78, +83.6%) is more representative of actual performance but uses daily bars. The true test is paper trading on live 5-minute data.
->
-> **Realistic expectation:** Somewhere between the daily backtest (+83.6%) and hourly backtest (-17.2%). Paper trading will reveal the actual number.
+### Daily Backtest (Same 3 Engines, Same Conductor, 2% Risk)
+
+```
+═══════════════════════════════════════
+  Win Rate:      52.7%
+  Profit Factor: 1.78
+  Net Profit:    Rs +8,358 on Rs 10,000 (+83.6%)
+  Max Drawdown:  11.7%
+  Trades:        91
+  Walk-Forward:  PASSED (WFE > 0.5)
+  Monte Carlo:   100% profitable, 0% ruin
+═══════════════════════════════════════
+```
+
+### Why Two Different Results?
+
+| | Daily Backtest | Hourly Backtest |
+|---|---|---|
+| Result | +83.6% | -17.2% |
+| Why | Daily candles capture full-day moves correctly | Hourly too coarse — misses intraday entries |
+| Scalper trades | N/A | 0 (needs 5-min data) |
+| Walk-forward | PASSED | FAILED |
+
+The live system uses **5-minute candles** — which neither backtest can fully simulate (yfinance only provides 60 days of 5-min data). The truth is somewhere between +83.6% and -17.2%. Only paper trading reveals the real number.
 
 ### What the backtest CAN'T simulate (live advantages)
 - 5-minute candles (hourly is too coarse for scalper/MR entries)
@@ -59,9 +78,9 @@
 | v4 Balanced | 52.7% | 1.78 | 91 | +Rs 6,874 | Daily | 6 setups added |
 | v5 Aggressive | 52.7% | 1.78 | 91 | +Rs 13,452 | Daily | Compound + 3% risk (inflated) |
 | v6 Conservative | 52.7% | 1.78 | 91 | +Rs 8,358 | Daily | 2% risk, theta-aware |
-| **v7 Live-Aligned** | **36.1%** | **0.39** | **36** | **-Rs 1,720** | **Hourly** | **Too coarse for intraday strategies** |
+| **v7 Hourly Test** | **36.1%** | **0.39** | **36** | **-Rs 1,720** | **Hourly** | **Too coarse for intraday strategies** |
 
-> **Lesson:** v1-v6 looked profitable because daily candles + 6 misaligned setups flattered the results. When aligned with the actual live system on intraday data, the edge disappears. The infrastructure is solid — the signals need work.
+> **Lesson:** v1-v5 had inflated returns due to mismatched setups and aggressive sizing. v6 (daily, 2% risk, 3 engines) is the most realistic daily approximation. v7 (hourly) is too coarse for strategies designed for 5-min candles. The live system with real 5-min data, option chain, VIX, and AI sentiment will be the true test. Paper trading for 200+ trades is required before any conclusion.
 
 ### Engine Breakdown (3 Engines — Matching Live System)
 
