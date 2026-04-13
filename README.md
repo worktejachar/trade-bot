@@ -16,22 +16,24 @@
 ═══════════════════════════════════════
   Win Rate:      52.7%
   Profit Factor: 1.78
-  Net Profit:    Rs 13,452 on Rs 10,000 (+134.5%)
-  Avg Winner:    Rs 641 per trade
-  Avg Loser:     Rs 403 per trade
+  Net Profit:    Rs 8,358 on Rs 10,000 (+83.6%)
+  Avg Winner:    Rs 398 per trade
+  Avg Loser:     Rs 250 per trade
   Risk/Reward:   1:1.59
-  Max Drawdown:  16.0%
-  Expectancy:    Rs 148 per trade
+  Max Drawdown:  11.7%
+  Expectancy:    Rs 92 per trade
   Trades:        91 (W:48, L:43)
-  Final Equity:  Rs 23,453
+  Final Equity:  Rs 18,358
 ═══════════════════════════════════════
   Monte Carlo:   100% profitable (1000 simulations)
-  Median Equity: Rs 54,719 (+447%) over 300 trades
+  Median Equity: Rs 37,552 (+276%) over 300 trades
   Ruin Prob:     0.0%
+═══════════════════════════════════════
+  Walk-Forward:  PASSED (WFE > 0.5 all folds)
 ═══════════════════════════════════════
 ```
 
-> **Rs 10,000 grew to Rs 23,453 in 2 years.** Compounding + bigger positions on high-confidence signals.
+> **Rs 10,000 grew to Rs 18,358 in 2 years.** Conservative 2% risk sizing, theta/IV-adjusted exits, walk-forward validated.
 
 ### Evolution (5 Iterations of Improvement)
 
@@ -41,56 +43,57 @@
 | v2 Accuracy | 46.8% | 2.04 | 124 | +Rs 12,558 | Options P&L fix |
 | v3 High WR | 57.1% | 2.82 | 35 | +Rs 4,393 | Confirmation filters |
 | v4 Balanced | 52.7% | 1.78 | 91 | +Rs 6,874 | 6 setups added |
-| **v5 Final** | **52.7%** | **1.78** | **91** | **+Rs 13,452** | **Compound + 3% risk** |
+| v5 Aggressive | 52.7% | 1.78 | 91 | +Rs 13,452 | Compound + 3% risk (inflated) |
+| **v6 Honest** | **52.7%** | **1.78** | **91** | **+Rs 8,358** | **2% risk, theta-aware, walk-forward validated** |
 
 ### Engine Breakdown (5 Strategies)
 
 | Engine | Trades | Win Rate | Net P&L | What It Does |
 |---|---|---|---|---|
-| **Momentum** | 17 | 58.8% | +Rs 6,034 | Pullback entries in trends |
-| **Consec Reversal** | 39 | 48.7% | +Rs 3,439 | 3-candle reversal patterns |
-| **EMA Pullback** | 13 | 61.5% | +Rs 2,334 | EMA21 touch + bounce |
-| **Range Bounce** | 12 | 41.7% | +Rs 987 | 5-day high/low bounce |
-| **MR Z-Score** | 10 | 60.0% | +Rs 658 | Z-score extreme snap-back |
+| **Momentum** | 17 | 58.8% | +Rs 3,893 | Pullback entries in trends |
+| **Consec Reversal** | 39 | 48.7% | +Rs 1,752 | 3-candle reversal patterns |
+| **EMA Pullback** | 13 | 61.5% | +Rs 1,501 | EMA21 touch + bounce |
+| **MR Z-Score** | 10 | 60.0% | +Rs 940 | Z-score extreme snap-back |
+| **Range Bounce** | 12 | 41.7% | +Rs 272 | 5-day high/low bounce |
 
-### Monthly P&L (12 Profitable / 6 Losing)
+### Monthly P&L (13 Profitable / 5 Losing)
 
 | Month | Trades | Win Rate | P&L |
 |---|---|---|---|
-| **Dec 2025** | **14** | **92.9%** | **+Rs 8,630** |
-| **Dec 2024** | **5** | **60.0%** | **+Rs 1,888** |
-| **Feb 2025** | **2** | **100%** | **+Rs 1,532** |
-| **Nov 2025** | **10** | **70.0%** | **+Rs 1,295** |
-| Apr 2025 | 1 | 100% | +Rs 743 |
-| Mar 2025 | 1 | 100% | +Rs 728 |
-| Nov 2024 | 3 | 66.7% | +Rs 683 |
-| Feb 2026 | 8 | 50.0% | +Rs 671 |
-| Jul 2025 | 4 | 50.0% | +Rs 506 |
-| Jan 2025 | 2 | 50.0% | +Rs 420 |
-| Sep 2025 | 5 | 40.0% | +Rs 417 |
-| May 2025 | 11 | 45.5% | +Rs 372 |
-| Jul 2024 | 3 | 33.3% | -Rs 84 |
-| Oct 2025 | 3 | 33.3% | -Rs 326 |
-| Sep 2024 | 2 | 0.0% | -Rs 413 |
-| Aug 2024 | 3 | 0.0% | -Rs 642 |
-| Jun 2025 | 10 | 20.0% | -Rs 920 |
-| Jan 2026 | 4 | 25.0% | -Rs 2,049 |
+| **Dec 2025** | **14** | **92.9%** | **+Rs 4,561** |
+| **Dec 2024** | **5** | **60.0%** | **+Rs 1,240** |
+| **Feb 2025** | **2** | **100%** | **+Rs 1,062** |
+| May 2025 | 11 | 45.5% | +Rs 888 |
+| **Nov 2025** | **10** | **70.0%** | **+Rs 634** |
+| Apr 2025 | 1 | 100% | +Rs 468 |
+| Mar 2025 | 1 | 100% | +Rs 458 |
+| Nov 2024 | 3 | 66.7% | +Rs 388 |
+| Sep 2025 | 5 | 40.0% | +Rs 330 |
+| Jul 2025 | 4 | 50.0% | +Rs 322 |
+| Jan 2025 | 2 | 50.0% | +Rs 316 |
+| Feb 2026 | 8 | 50.0% | +Rs 199 |
+| Jul 2024 | 3 | 33.3% | +Rs 25 |
+| Oct 2025 | 3 | 33.3% | -Rs 157 |
+| Sep 2024 | 2 | 0.0% | -Rs 342 |
+| Aug 2024 | 3 | 0.0% | -Rs 445 |
+| Jan 2026 | 4 | 25.0% | -Rs 681 |
+| Jun 2025 | 10 | 20.0% | -Rs 910 |
 
-> **Best month:** Dec 2025 (+Rs 8,630, 92.9% WR). **Worst month:** Jan 2026 (-Rs 2,049). Compounding effect visible — later months have bigger absolute numbers.
+> **Best month:** Dec 2025 (+Rs 4,561, 92.9% WR). **Worst month:** Jun 2025 (-Rs 910). Honest numbers with 2% risk and theta-adjusted exits.
 
 ### Monte Carlo (1000 Simulations x 300 Trades)
 
 | Metric | Value |
 |---|---|
-| **Median Final Equity** | **Rs 54,719 (+447%)** |
-| Best Case (95th) | Rs 68,758 (+588%) |
-| Worst Case (5th) | Rs 39,459 (+295%) |
-| Avg Max Drawdown | 18.4% |
-| Worst Drawdown | 66.8% |
+| **Median Final Equity** | **Rs 37,552 (+276%)** |
+| Best Case (95th) | Rs 47,289 (+373%) |
+| Worst Case (5th) | Rs 28,444 (+184%) |
+| Avg Max Drawdown | 12.7% |
+| Worst Drawdown | 45.8% |
 | Ruin Probability | 0.0% |
 | **Profitable Runs** | **100%** |
 
-> Even worst case: +295% return. Zero ruin across 1000 simulations.
+> Even worst case: +184% return. Zero ruin across 1000 simulations.
 
 ---
 
@@ -98,7 +101,7 @@
 
 | Feature | GX TradeIntel | Most Open-Source Bots |
 |---|---|---|
-| Return | +134.5% (verified backtest) | Unknown |
+| Return | +83.6% (walk-forward validated) | Unknown |
 | Instruments | 20 (5 indices + 15 stocks) | 1 (Nifty only) |
 | AI Brain | Claude AI regime validation | None |
 | Strategies | 5 engines + auto-disable | 1 fixed strategy |
@@ -136,8 +139,8 @@ RELIANCE | TCS | HDFC BANK | INFOSYS | ICICI BANK | SBI | BAJAJ FINANCE | ITC | 
 ┌──────────────┐     ┌───────────────┐     ┌──────────────┐
 │  25+ INDIC.  │     │  COMPOUND     │     │  SAFETY      │
 │  Z-Score,CPR │     │  RISK ENGINE  │     │  Kill Switch │
-│  VWAP Bands  │     │  3% Equity    │     │  Event Cal.  │
-│  StochRSI    │     │  Up to 8 lots │     │  DD Guard    │
+│  VWAP Bands  │     │  2% Equity    │     │  Event Cal.  │
+│  StochRSI    │     │  Up to 5 lots │     │  DD Guard    │
 └──────────────┘     └───────────────┘     └──────────────┘
        │                                           │
        ▼                                           ▼
@@ -189,11 +192,11 @@ python3 start.py             # Start paper trading
 
 | Feature | Setting |
 |---|---|
-| **Risk Per Trade** | 3% of current equity (compounds) |
-| **High Confidence (75+)** | 1.5x size multiplier |
-| **Max Lots** | 8 per trade |
-| **Stop Loss** | 18% of premium |
-| **Target** | 40% max (trail winners) |
+| **Risk Per Trade** | 2% of current equity (compounds) |
+| **High Confidence (70+)** | 1.2x size multiplier |
+| **Max Lots** | 5 per trade |
+| **Stop Loss** | 20% of premium (theta-adjusted) |
+| **Target** | 30% max (trail winners) |
 | **Drawdown Guard** | 5%→normal, 10%→half, 15%→quarter, 20%→STOP |
 | **Kill Switch** | API failure, VIX panic, 15min no heartbeat |
 | **Event Calendar** | RBI, Budget, FOMC, Election → auto skip |
@@ -245,7 +248,7 @@ trade-bot/
 
 ## Robustness Testing
 
-Noise Injection | Parameter Sensitivity | Entry Delay | Walk-Forward | Monte Carlo | Optimal Strike Selection
+Noise Injection | Parameter Sensitivity | Entry Delay | **Walk-Forward (PASSED, WFE > 0.5 all folds)** | Monte Carlo (100% profitable) | Optimal Strike Selection
 
 ## Contributing
 

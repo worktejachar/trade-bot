@@ -86,6 +86,7 @@ def add_indicators(df):
     df["range_low"] = df["low"].rolling(5).min()
     df["near_range_low"] = ((c - df["range_low"]) / atr14.replace(0, np.nan)) < 0.5
     df["near_range_high"] = ((df["range_high"] - c) / atr14.replace(0, np.nan)) < 0.5
+    df["dow"] = pd.to_datetime(df["timestamp"]).dt.dayofweek
     return df
 
 
@@ -330,10 +331,9 @@ def run_backtest(df, capital=10000):
             score = signal["score"]
             if score < 55: continue
 
-            if score >= 75: risk_mult = 1.5    # HIGH confidence = 1.5x size (was 1.0)
-            elif score >= 65: risk_mult = 1.0  # Good confidence = full size
-            elif score >= 55: risk_mult = 0.6  # Moderate = 60%
-            else: continue
+            if score >= 70: risk_mult = 1.2
+            elif score >= 60: risk_mult = 0.8
+            else: risk_mult = 0.5
 
             # Drawdown reduction (same as before)
             dd_pct = (peak - equity) / peak * 100 if peak > 0 else 0
@@ -345,24 +345,30 @@ def run_backtest(df, capital=10000):
             spot = row["close"]; prem = spot * 0.004
             # 3X CHANGE: Risk 3% of CURRENT equity (was 2% of capital)
             # This compounds — as equity grows, position size grows
-            max_risk = equity * 0.03 * risk_mult
-            sl_cost = prem * 0.18 * 25
+            max_risk = equity * 0.02 * risk_mult
+            sl_cost = prem * 0.20 * 25
             if sl_cost <= 0: continue
             # 3X CHANGE: Max 8 lots (was 5) — bigger positions on strong signals
-            lots = max(1, min(8, int(max_risk / sl_cost)))
+            lots = max(1, min(5, int(max_risk / sl_cost)))
             qty = lots * 25
 
             if i + 1 >= len(df): break
             nxt = df.iloc[i + 1]
             move = (nxt["close"] - spot) if signal["direction"] == "BULL" else (spot - nxt["close"])
             pchg = (move * 0.5) / prem * 100
-            slippage_cost = prem * qty * 0.005 * 2
+            dow = int(row.get("dow", 1))
+            slip = 0.015 if dow in (0, 4) else 0.005  # 3x slippage Mon/Fri
+            slippage_cost = prem * qty * slip * 2
 
-            # 3X CHANGE: Bigger targets, trail winners
-            if pchg <= -18: pnl_u = -prem * 0.18; result = "LOSS"
-            elif pchg >= 40: pnl_u = prem * 0.40; result = "WIN"   # BIG winner (was 25%)
-            elif pchg >= 20: pnl_u = prem * 0.20; result = "WIN"   # Good winner (was 12%)
-            elif pchg >= 8: pnl_u = prem * 0.08; result = "WIN"    # Small winner (was 3%)
+            # Theta-adjusted SL
+            theta_mult = {0: 1.0, 1: 1.0, 2: 1.15, 3: 1.5, 4: 1.0}.get(dow, 1.0)
+            iv_loss = {0: 1.0, 1: 0, 2: 0, 3: 3.0, 4: 0.5}.get(dow, 0)
+            pchg -= iv_loss  # IV crush penalty
+            eff_sl = 20 * theta_mult
+            if pchg <= -eff_sl: pnl_u = -prem * (eff_sl/100); result = "LOSS"
+            elif pchg >= 30: pnl_u = prem * 0.30; result = "WIN"
+            elif pchg >= 15: pnl_u = prem * 0.15; result = "WIN"
+            elif pchg >= 5: pnl_u = prem * 0.05; result = "WIN"
             elif pchg >= 0: pnl_u = move * 0.5; result = "WIN" if pnl_u > 0 else "LOSS"
             else: pnl_u = move * 0.5; result = "LOSS"
 
@@ -427,11 +433,40 @@ def monte_carlo(trades, capital=10000, sims=1000, n_trades=300):
   ───────────────────────────────────""")
 
 
+def walk_forward_validation(df, capital=10000, n_folds=4):
+    fold_size = len(df) // n_folds
+    results = []
+    print(f"\n  WALK-FORWARD VALIDATION ({n_folds} folds)")
+    print(f"  ───────────────────────────────────")
+    print(f"  {'Fold':<6} {'Train PF':>9} {'Test PF':>8} {'WFE':>6} {'Status':>8}")
+    print(f"  {'-'*42}")
+    for i in range(1, n_folds):
+        train = df.iloc[:fold_size * i].copy()
+        test = df.iloc[fold_size * i:fold_size * (i + 1)].copy()
+        if len(test) < 20:
+            continue
+        train_trades, _ = run_backtest(train, capital)
+        test_trades, _ = run_backtest(test, capital)
+        train_m = calc(train_trades, capital, 0)
+        test_m = calc(test_trades, capital, 0)
+        train_pf = train_m.get("pf", 0) if train_m else 0
+        test_pf = test_m.get("pf", 0) if test_m else 0
+        wfe = test_pf / train_pf if train_pf > 0 else 0
+        status = "GOOD" if wfe > 0.5 else "OVERFIT" if wfe < 0.3 else "MARGINAL"
+        results.append(wfe)
+        print(f"  {i:<6} {train_pf:>9.2f} {test_pf:>8.2f} {wfe:>6.2f} {status:>8}")
+    avg_wfe = np.mean(results) if results else 0
+    print(f"  {'-'*42}")
+    print(f"  {'AVG':<6} {'':>9} {'':>8} {avg_wfe:>6.2f} {'PASS' if avg_wfe > 0.5 else 'FAIL':>8}")
+    print(f"  ───────────────────────────────────")
+    return avg_wfe
+
+
 def main():
     print("\n" + "=" * 55)
-    print("  GX TRADEINTEL v6 — 3X PROFIT MODE")
-    print("  v3 Accuracy + Bigger Positions + Compound Growth")
-    print("  6 Setups | 3% Risk | Trail Winners to 40%")
+    print("  GX TRADEINTEL v6 — REALISTIC MODE")
+    print("  v3 Accuracy + Conservative Sizing + Theta-Aware")
+    print("  6 Setups | 2% Risk | Walk-Forward Validated")
     print("=" * 55 + "\n")
 
     df = download_nifty_data(2)
@@ -487,6 +522,7 @@ def main():
             e = "+" if r["pnl"] > 0 else "-"
             print(f"  {str(r['month']):<10} {r['trades']:>7} {r['wins']:>5} {wr:>5.1f}% {e}Rs {abs(r['pnl']):>7,.0f}")
 
+    walk_forward_validation(df)
     monte_carlo(trades)
 
     if trades: pd.DataFrame(trades).to_csv("logs/backtest_results.csv", index=False)
@@ -497,7 +533,11 @@ def main():
     print(f"    v2: 46.8% WR | PF 2.04 | 124 trades | Rs +12,558")
     print(f"    v3: 57.1% WR | PF 2.82 |  35 trades | Rs  +4,393")
     print(f"    v4: 52.7% WR | PF 1.78 |  91 trades | Rs  +6,874")
-    print(f"    v5: {m['wr']}% WR | PF {m['pf']} | {m['trades']:>3} trades | Rs +{m['net']:,.0f}  ← 3X TARGET")
+    print(f"    v5: {m['wr']}% WR | PF {m['pf']} | {m['trades']:>3} trades | Rs +{m['net']:,.0f}  ← REALISTIC")
+    print()
+    print(f"  BEFORE GOING LIVE:")
+    print(f"    Paper trade 200+ trades (est. 6-12 months)")
+    print(f"    Only go live if: WR > 50%, PF > 1.3, DD < 15%")
     print()
 
 if __name__ == "__main__":
