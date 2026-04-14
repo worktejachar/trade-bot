@@ -121,7 +121,7 @@ class ConductorBot:
             "ema_fast": 9, "ema_slow": 21, "adx_period": 14, "rsi_period": 14,
             "bb_period": 20, "bb_std": 2.0, "obv_lookback": 10}
         df_15m = compute_all(df_15m, ind_cfg)
-        vix = self.live_data.vix or 0
+        vix = self.live_data.vix if self.live_data.vix > 0 else 15  # Default 15 if unavailable
         self.regime_data = detect_regime(df_15m, vix)
 
         L = df_15m.iloc[-1]
@@ -165,7 +165,7 @@ class ConductorBot:
 
         if self.last_live_refresh and (datetime.now() - self.last_live_refresh).seconds > 600:
             try: self.live_data.fetch_all("NIFTY"); self.last_live_refresh = datetime.now()
-            except: pass
+            except Exception as e: logger.warning(f"Live data refresh failed (continuing): {e}")
 
         if self.last_news and (datetime.now() - self.last_news).seconds > config.NEWS_REFRESH:
             self.news.analyze_sentiment_batch(self.news.fetch_news()); self.last_news = datetime.now()
@@ -284,6 +284,9 @@ class ConductorBot:
             self.alerts.send(f"❌ <b>ORDER FAILED</b>"); return
 
         self.kill_switch.record_api_success()
+        filled_qty = result.get("filled_qty", result.get("quantity", qty))
+        if filled_qty and filled_qty > 0:
+            qty = filled_qty
         pos = Position(contract["symbol"], contract["token"], signal.action, premium, qty,
             opt_sl, opt_t1, opt_t2, result["order_id"], datetime.now(), highest_premium=premium)
         self.risk.positions.append(pos)
@@ -319,7 +322,7 @@ class ConductorBot:
             try:
                 df_t = pd.read_csv(f"{config.LOG_DIR}/trades.csv")
                 metrics = self.post_market.calculate_full_metrics([{"pnl": r.get("pnl", 0)} for _, r in df_t.iterrows()])
-            except: pass
+            except Exception as e: logger.warning(f"Post-market metrics failed (continuing): {e}")
         stats = self.risk.daily_stats()
         self.post_market.log_equity(datetime.now().strftime("%Y-%m-%d"), config.TOTAL_CAPITAL + stats["pnl"], stats["pnl"])
         self.alerts.send(self.post_market.generate_report_card(regime_result, stats, metrics))

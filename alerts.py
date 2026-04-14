@@ -66,50 +66,52 @@ class TelegramAlerts:
     # ── Signal Alert ────────────────────────────
 
     def send_signal(self, signal) -> bool:
-        """Send a trading signal alert."""
+        """Send a trading signal alert in plain English."""
 
         if signal.action == "HOLD":
             return False  # Don't spam HOLD signals
 
-        action_emoji = "🟢" if signal.action == "BUY_CE" else "🔴"
-        action_text = "BUY CALL (CE)" if signal.action == "BUY_CE" else "BUY PUT (PE)"
+        if signal.action == "BUY_CE":
+            direction_desc = "CALL option (betting market goes UP)"
+        else:
+            direction_desc = "PUT option (betting market goes DOWN)"
 
-        # Confidence bar
-        filled = int(signal.confidence / 10)
-        conf_bar = "█" * filled + "░" * (10 - filled)
-
-        # Risk amount for ₹10K capital
-        risk_per_lot = abs(signal.entry_price - signal.stop_loss) * 25  # Nifty lot
+        # Risk calculation
+        risk_per_unit = abs(signal.entry_price - signal.stop_loss)
+        risk_per_lot = risk_per_unit * 25  # Nifty lot
         max_lots = max(1, int(config.MAX_RISK_PER_TRADE / risk_per_lot)) if risk_per_lot > 0 else 1
+        total_risk = risk_per_unit * max_lots * 25
 
-        reasons_text = "\n".join([f"  • {r}" for r in signal.reasons[:5]])
+        # Confidence description
+        if signal.confidence >= 85:
+            conf_desc = "very strong signal"
+        elif signal.confidence >= 70:
+            conf_desc = "strong signal"
+        elif signal.confidence >= 55:
+            conf_desc = "moderate signal"
+        else:
+            conf_desc = "weak signal"
+
+        # Plain English reasons
+        reasons_text = "\n".join([f"  - {r}" for r in signal.reasons[:5]])
 
         msg = f"""
-{action_emoji} <b>GX TRADEINTEL SIGNAL</b> {action_emoji}
+🔔 <b>TRADE ALERT</b>
 
-<b>🎯 {action_text}</b>
-<b>Instrument:</b> <code>{signal.instrument}</code>
-<b>Timeframe:</b> 5 min
+I'm buying a {signal.instrument} <b>{direction_desc}</b>.
 
-━━━━━━━━━━━━━━━━━━━━
+<b>Strike:</b> {signal.instrument} | <b>Price:</b> ₹{signal.entry_price:,.2f} per unit
+<b>If I'm wrong:</b> I'll exit at ₹{signal.stop_loss:,.2f} (lose ₹{risk_per_unit:,.2f} per unit)
+<b>If I'm right:</b> Target ₹{signal.target:,.2f} (R:R {signal.risk_reward}x)
 
-<b>📍 Entry:</b>  <code>₹{signal.entry_price:,.2f}</code>
-<b>🛑 Stop Loss:</b>  <code>₹{signal.stop_loss:,.2f}</code>
-<b>🎯 Target:</b>  <code>₹{signal.target:,.2f}</code>
-<b>📊 R:R Ratio:</b>  <code>{signal.risk_reward}x</code>
+<b>Confidence:</b> {signal.confidence}% ({conf_desc})
+<b>Position:</b> {max_lots} lot(s) | Max risk: ₹{config.MAX_RISK_PER_TRADE:,.0f}
 
-━━━━━━━━━━━━━━━━━━━━
-
-<b>Confidence:</b> [{conf_bar}] {signal.confidence}%
-
-<b>Reasons:</b>
+<b>Why this trade:</b>
 {reasons_text}
 
-<b>Position Size:</b> {max_lots} lot(s)
-<b>Max Risk:</b> ₹{config.MAX_RISK_PER_TRADE:,.0f}
-
 ⏰ {datetime.now().strftime('%H:%M:%S IST')}
-{'📝 PAPER TRADE' if config.PAPER_TRADE else '⚡ LIVE TRADE'}
+{'📝 PAPER TRADE (no real money)' if config.PAPER_TRADE else '⚡ LIVE TRADE (real money)'}
 """
         return self.send(msg.strip())
 
@@ -121,11 +123,24 @@ class TelegramAlerts:
         sentiment: dict,
         high_impact_news: list,
     ) -> bool:
-        """Send pre-market morning briefing."""
+        """Send pre-market morning briefing in plain English."""
 
-        sentiment_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "🟡"}.get(
-            sentiment.get("label", "NEUTRAL"), "🟡"
-        )
+        label = sentiment.get("label", "NEUTRAL")
+        score = sentiment.get("score", 0)
+        bullish_count = sentiment.get("bullish", 0)
+        bearish_count = sentiment.get("bearish", 0)
+        neutral_count = sentiment.get("neutral", 0)
+
+        # Plain English sentiment
+        if label == "BULLISH":
+            mood = "positive — more good news than bad"
+            emoji = "🟢"
+        elif label == "BEARISH":
+            mood = "negative — more bad news than good"
+            emoji = "🔴"
+        else:
+            mood = "mixed — no clear direction from news"
+            emoji = "🟡"
 
         news_text = ""
         for n in high_impact_news[:5]:
@@ -133,28 +148,27 @@ class TelegramAlerts:
             news_text += f"  {s_emoji} {n.title[:60]}...\n"
 
         if not news_text:
-            news_text = "  No high-impact news detected\n"
+            news_text = "  Nothing major in the news today.\n"
 
         msg = f"""
-☀️ <b>GX TRADEINTEL — MORNING BRIEFING</b>
+☀️ <b>Good Morning! Here's your market update.</b>
 📅 {datetime.now().strftime('%A, %d %B %Y')}
 
 ━━━━━━━━━━━━━━━━━━━━
 
-<b>📊 NIFTY 50:</b> <code>₹{nifty_price:,.2f}</code>
+<b>Nifty 50 is at ₹{nifty_price:,.2f}</b>
 
-<b>{sentiment_emoji} Market Sentiment:</b> <code>{sentiment.get('label', 'N/A')}</code>
-  Score: {sentiment.get('score', 0):.2f}
-  Bullish: {sentiment.get('bullish', 0)} | Bearish: {sentiment.get('bearish', 0)} | Neutral: {sentiment.get('neutral', 0)}
+{emoji} <b>Today's mood:</b> {mood}
+  ({bullish_count} positive news, {bearish_count} negative, {neutral_count} neutral)
 
-<b>🔥 Key News:</b>
+<b>Key news today:</b>
 {news_text}
-<b>💰 Capital:</b> ₹{config.TOTAL_CAPITAL:,}
-<b>⚠️ Max Risk/Trade:</b> ₹{config.MAX_RISK_PER_TRADE:,.0f}
-<b>🎯 Strategy:</b> RSI + VWAP + EMA Confluence
+<b>Your capital:</b> ₹{config.TOTAL_CAPITAL:,}
+<b>Max I'll risk per trade:</b> ₹{config.MAX_RISK_PER_TRADE:,.0f}
+<b>Strategy:</b> I'll watch for price + volume patterns and trade when conditions align.
 
 ━━━━━━━━━━━━━━━━━━━━
-{'📝 PAPER MODE — No real orders' if config.PAPER_TRADE else '⚡ LIVE MODE — Real orders enabled'}
+{'📝 PAPER MODE — just practicing, no real money at risk' if config.PAPER_TRADE else '⚡ LIVE MODE — real orders will be placed'}
 """
         return self.send(msg.strip())
 
@@ -164,14 +178,17 @@ class TelegramAlerts:
         self, symbol: str, action: str, qty: int, price: float, order_id: str
     ) -> bool:
         """Alert when a trade is entered."""
-        emoji = "🟢" if "CE" in action or "BUY" in action else "🔴"
-        msg = f"""
-{emoji} <b>TRADE ENTERED</b>
+        if "CE" in action or "BUY" in action:
+            direction = "expecting the market to go UP"
+        else:
+            direction = "expecting the market to go DOWN"
 
-<b>Symbol:</b> <code>{symbol}</code>
-<b>Action:</b> {action}
-<b>Qty:</b> {qty}
-<b>Price:</b> <code>₹{price:,.2f}</code>
+        msg = f"""
+🟢 <b>I just entered a trade!</b>
+
+<b>What:</b> {symbol} — {direction}
+<b>Quantity:</b> {qty} units
+<b>Bought at:</b> ₹{price:,.2f}
 <b>Order ID:</b> <code>{order_id}</code>
 ⏰ {datetime.now().strftime('%H:%M:%S IST')}
 """
@@ -181,19 +198,25 @@ class TelegramAlerts:
         self, symbol: str, entry_price: float, exit_price: float, qty: int, pnl: float
     ) -> bool:
         """Alert when a trade is exited."""
-        emoji = "💰" if pnl > 0 else "💸"
-        pnl_text = f"+₹{pnl:,.2f}" if pnl > 0 else f"-₹{abs(pnl):,.2f}"
         pnl_pct = ((exit_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
 
+        if pnl > 0:
+            result = f"Made ₹{pnl:,.2f} profit ({pnl_pct:+.1f}%)"
+            emoji = "💰"
+        elif pnl < 0:
+            result = f"Lost ₹{abs(pnl):,.2f} ({pnl_pct:+.1f}%)"
+            emoji = "💸"
+        else:
+            result = "Broke even (no profit, no loss)"
+            emoji = "↔️"
+
         msg = f"""
-{emoji} <b>TRADE CLOSED</b>
+{emoji} <b>Trade closed!</b>
 
-<b>Symbol:</b> <code>{symbol}</code>
-<b>Entry:</b> <code>₹{entry_price:,.2f}</code>
-<b>Exit:</b> <code>₹{exit_price:,.2f}</code>
-<b>Qty:</b> {qty}
-
-<b>P&L:</b> <code>{pnl_text}</code> ({pnl_pct:+.1f}%)
+<b>What:</b> {symbol}
+<b>Bought at:</b> ₹{entry_price:,.2f} → <b>Sold at:</b> ₹{exit_price:,.2f}
+<b>Quantity:</b> {qty} units
+<b>Result:</b> {result}
 ⏰ {datetime.now().strftime('%H:%M:%S IST')}
 """
         return self.send(msg.strip())
@@ -203,22 +226,52 @@ class TelegramAlerts:
     def send_daily_summary(
         self, total_trades: int, wins: int, losses: int, total_pnl: float
     ) -> bool:
-        """End-of-day P&L summary."""
-        win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
-        emoji = "🏆" if total_pnl > 0 else "📉"
-        pnl_text = f"+₹{total_pnl:,.2f}" if total_pnl > 0 else f"-₹{abs(total_pnl):,.2f}"
+        """End-of-day P&L summary in plain English."""
+        capital_after = config.TOTAL_CAPITAL + total_pnl
 
-        msg = f"""
-{emoji} <b>DAILY SUMMARY — {datetime.now().strftime('%d %b %Y')}</b>
+        if total_trades == 0:
+            msg = f"""
+🌙 <b>Today's Result — {datetime.now().strftime('%d %b %Y')}</b>
 
-━━━━━━━━━━━━━━━━━━━━
-<b>Trades:</b> {total_trades}
-<b>Wins:</b> {wins} | <b>Losses:</b> {losses}
-<b>Win Rate:</b> {win_rate:.0f}%
+No trades taken today — market didn't give a clear opportunity.
+Your capital: ₹{config.TOTAL_CAPITAL:,.2f} (unchanged).
+Tomorrow we try again. Good night!
+"""
+        elif total_pnl > 0:
+            msg = f"""
+🏆 <b>Today's Result — {datetime.now().strftime('%d %b %Y')}</b>
 
-<b>Net P&L:</b> <code>{pnl_text}</code>
-<b>Capital:</b> <code>₹{config.TOTAL_CAPITAL + total_pnl:,.2f}</code>
-━━━━━━━━━━━━━━━━━━━━
+Good day! Made a profit.
+
+Trades taken: {total_trades}
+Won {wins}, lost {losses} ({(wins / total_trades * 100):.0f}% win rate)
+<b>Profit today: +₹{total_pnl:,.2f}</b>
+Your capital: ₹{capital_after:,.2f}
+
+See you tomorrow! 🌙
+"""
+        elif total_pnl < 0:
+            msg = f"""
+📉 <b>Today's Result — {datetime.now().strftime('%d %b %Y')}</b>
+
+Tough day. Took a small loss.
+
+Trades taken: {total_trades}
+Won {wins}, lost {losses} ({(wins / total_trades * 100):.0f}% win rate)
+<b>Loss today: -₹{abs(total_pnl):,.2f}</b>
+Your capital: ₹{capital_after:,.2f}
+
+Losses happen — it's part of trading. We stick to the plan. 🌙
+"""
+        else:
+            msg = f"""
+↔️ <b>Today's Result — {datetime.now().strftime('%d %b %Y')}</b>
+
+Broke even today — no profit, no loss.
+
+Trades taken: {total_trades}
+Won {wins}, lost {losses}
+Your capital: ₹{capital_after:,.2f} (unchanged)
 
 See you tomorrow! 🌙
 """
@@ -227,17 +280,29 @@ See you tomorrow! 🌙
     # ── News Alert ──────────────────────────────
 
     def send_news_alert(self, title: str, sentiment: str, impact: str, source: str) -> bool:
-        """Alert for high-impact news."""
-        emoji = {"bullish": "📈", "bearish": "📉", "neutral": "📰"}.get(sentiment, "📰")
-        impact_emoji = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "⚪"}.get(impact, "⚪")
+        """Alert for high-impact news in plain English."""
+        if sentiment == "bullish":
+            mood = "This is good for the market (prices may go up)."
+        elif sentiment == "bearish":
+            mood = "This could hurt the market (prices may drop)."
+        else:
+            mood = "This probably won't move the market much."
+
+        if impact == "HIGH":
+            urgency = "⚠️ High impact — this could cause big moves!"
+        elif impact == "MEDIUM":
+            urgency = "Medium impact — worth keeping an eye on."
+        else:
+            urgency = "Low impact — unlikely to affect trading."
 
         msg = f"""
-{emoji} <b>NEWS ALERT</b> {impact_emoji} {impact}
+📰 <b>News Update</b>
 
 {title}
 
-<b>Sentiment:</b> {sentiment.upper()}
-<b>Source:</b> {source}
+{mood}
+{urgency}
+Source: {source}
 ⏰ {datetime.now().strftime('%H:%M:%S IST')}
 """
         return self.send(msg.strip())

@@ -101,6 +101,14 @@ class TelegramCommander:
             self._cmd_resume()
         elif text == "/health":
             self._cmd_health()
+        elif text == "/why":
+            self._cmd_why()
+        elif text == "/settings":
+            self._cmd_settings()
+        elif text.startswith("/ask"):
+            self._cmd_ask(text)
+        elif text.startswith("/explain"):
+            self._cmd_explain(text)
         elif text == "/help":
             self._cmd_help()
 
@@ -122,26 +130,34 @@ class TelegramCommander:
             self._send("⚠️ Bot reference not set")
             return
 
+        # Engine name in plain English
         engine = self.bot.active_engine or "NONE"
+        engine_names = {
+            "MOMENTUM": "Momentum (riding trends)",
+            "MEAN_REVERSION": "Mean Reversion (buy low, sell high)",
+            "SCALPER": "Scalper (quick in-and-out trades)",
+            "NONE": "None — waiting for the right setup",
+        }
+        engine_desc = engine_names.get(engine, engine)
+
         positions = [p for p in self.bot.risk.positions if p.is_open]
-        pos_text = "No open positions"
         if positions:
             p = positions[0]
-            pnl_est = "N/A"
-            pos_text = f"{p.symbol} | {p.direction} | Entry: ₹{p.entry_price:.2f} | {p.holding_minutes}min"
+            pos_text = f"Yes — {p.symbol}, entered at ₹{p.entry_price:.2f}, held for {p.holding_minutes} min"
+        else:
+            pos_text = "No open trades right now."
 
-        conductor = self.bot.conductor_decision or {}
+        mode = "PAPER (practice mode, no real money)" if config.PAPER_TRADE else "LIVE (real money)"
 
         self._send(
-            f"📊 <b>BOT STATUS</b>\n\n"
-            f"<b>Running:</b> {'Yes' if self.bot.running else 'No'}\n"
-            f"<b>Mode:</b> {'PAPER' if config.PAPER_TRADE else 'LIVE'}\n"
-            f"<b>Active Engine:</b> {engine}\n"
-            f"<b>Conductor Conf:</b> {conductor.get('confidence', 'N/A')}%\n"
-            f"<b>Regime:</b> {self.bot.regime_data.get('regime', 'N/A')}\n"
-            f"<b>Trades Today:</b> {self.bot.risk.daily_trades}\n"
-            f"<b>Position:</b> {pos_text}\n"
-            f"<b>Daily P&L:</b> ₹{self.bot.risk.daily_pnl:+,.2f}\n"
+            f"📊 <b>Bot Status</b>\n\n"
+            f"Bot is {'ON and watching the market' if self.bot.running else 'PAUSED (not trading)'}.\n"
+            f"Mode: {mode}\n"
+            f"Currently using: {engine_desc}\n"
+            f"Trades today: {self.bot.risk.daily_trades}\n"
+            f"Open position: {pos_text}\n"
+            f"Today's P&L: ₹{self.bot.risk.daily_pnl:+,.2f}\n"
+            f"Capital: ₹{config.TOTAL_CAPITAL:,}\n"
             f"⏰ {datetime.now():%H:%M:%S IST}"
         )
 
@@ -149,37 +165,93 @@ class TelegramCommander:
         if not self.bot:
             return
         stats = self.bot.risk.daily_stats()
+        trades = stats['trades']
+
+        if trades == 0:
+            summary = "No trades today."
+        elif stats['pnl'] > 0:
+            summary = f"Won {stats['wins']}, lost {stats['losses']} ({stats['win_rate']}% win rate)."
+        else:
+            summary = f"Won {stats['wins']}, lost {stats['losses']} ({stats['win_rate']}% win rate)."
+
+        pnl = stats['pnl']
+        if pnl > 0:
+            pnl_text = f"+₹{pnl:,.2f} (profit)"
+        elif pnl < 0:
+            pnl_text = f"-₹{abs(pnl):,.2f} (loss)"
+        else:
+            pnl_text = "₹0 (no change)"
+
         self._send(
-            f"💰 <b>TODAY'S P&L</b>\n\n"
-            f"Trades: {stats['trades']}\n"
-            f"Wins: {stats['wins']} | Losses: {stats['losses']}\n"
-            f"Win Rate: {stats['win_rate']}%\n"
-            f"Net P&L: ₹{stats['pnl']:+,.2f}\n"
-            f"Capital: ₹{stats['capital_after']:,.2f}"
+            f"💰 <b>Today's Profit/Loss</b>\n\n"
+            f"Today's result: {pnl_text}\n"
+            f"Trades taken: {trades}\n"
+            f"{summary}\n"
+            f"Total capital: ₹{stats['capital_after']:,.2f}"
         )
 
     def _cmd_feeds(self):
         if not self.bot or not hasattr(self.bot, 'live_data'):
-            self._send("⚠️ Live data hub not available")
+            self._send("⚠️ Live data not available right now.")
             return
-        summary = self.bot.live_data.get_summary_text()
-        self._send(summary)
+        ld = self.bot.live_data
+        fii = ld.fii_dii.get("fii_net", 0)
+        dii = ld.fii_dii.get("dii_net", 0)
+        vix = ld.vix
+        crude = ld.crude
+
+        fii_dir = "Buying" if fii > 0 else "Selling"
+        dii_dir = "Buying" if dii > 0 else "Selling"
+
+        if vix < 15:
+            vix_desc = "low — calm market"
+        elif vix < 22:
+            vix_desc = "moderate — normal day expected"
+        elif vix < 30:
+            vix_desc = "high — expect bigger swings"
+        else:
+            vix_desc = "very high — market is fearful!"
+
+        self._send(
+            f"📡 <b>Live Market Data</b>\n\n"
+            f"Big investors (FII): {fii_dir} ₹{abs(fii):,.0f} Cr today\n"
+            f"Indian funds (DII): {dii_dir} ₹{abs(dii):,.0f} Cr today\n"
+            f"Fear level (VIX): {vix:.1f} ({vix_desc})\n"
+            f"Oil price: ${crude:.0f} per barrel"
+        )
 
     def _cmd_regime(self):
         if not self.bot:
             return
         r = self.bot.regime_data
+        regime = r.get('regime', 'N/A')
+
+        # Plain English regime descriptions
+        regime_info = {
+            "TRENDING": (
+                "TRENDING (moving in one direction)",
+                "Price is moving steadily up or down.",
+                "Momentum — ride the trend."
+            ),
+            "RANGING": (
+                "SIDEWAYS (ranging)",
+                "Price is bouncing between levels, not trending.",
+                "Mean Reversion — buy low, sell high."
+            ),
+            "VOLATILE": (
+                "VOLATILE (big swings)",
+                "Price is making large, unpredictable moves.",
+                "Scalper — quick in-and-out trades."
+            ),
+        }
+        desc = regime_info.get(regime, (regime, "Unable to determine.", "Waiting."))
+
         self._send(
-            f"📈 <b>MARKET REGIME</b>\n\n"
-            f"<b>Regime:</b> {r.get('regime', 'N/A')}\n"
-            f"<b>Confidence:</b> {r.get('confidence', 0)}%\n"
-            f"<b>Direction:</b> {r.get('direction', 'N/A')}\n"
-            f"<b>ADX:</b> {r.get('adx', 'N/A')}\n"
-            f"<b>ATR Ratio:</b> {r.get('atr_ratio', 'N/A')}\n"
-            f"<b>BB:</b> {'Expanding' if r.get('bb_expanding') else 'Contracting'}\n"
-            f"<b>Scores:</b> T={r.get('scores', {}).get('TRENDING', 0)} "
-            f"R={r.get('scores', {}).get('RANGING', 0)} "
-            f"V={r.get('scores', {}).get('VOLATILE', 0)}"
+            f"📈 <b>Market Type Today</b>\n\n"
+            f"Market type: <b>{desc[0]}</b>\n"
+            f"What it means: {desc[1]}\n"
+            f"Best strategy for this: {desc[2]}\n"
+            f"Confidence: {r.get('confidence', 0)}%"
         )
 
     def _cmd_signal(self):
@@ -203,26 +275,278 @@ class TelegramCommander:
 
     def _cmd_health(self):
         checks = []
-        checks.append(f"{'✅' if self.bot and self.bot.running else '❌'} Bot running")
-        checks.append(f"{'✅' if self.bot and self.bot.broker.connected else '❌'} Angel One connected")
-        checks.append(f"{'✅' if self.enabled else '❌'} Telegram active")
-        checks.append(f"{'✅' if config.ANTHROPIC_API_KEY != 'YOUR_ANTHROPIC_KEY' else '⚠️'} Claude API configured")
+        checks.append(f"{'✅' if self.bot and self.bot.running else '❌'} Bot is running")
+        checks.append(f"{'✅' if self.bot and self.bot.broker.connected else '❌'} Connected to Angel One")
+        checks.append(f"{'✅' if self.enabled else '❌'} Telegram is working")
+        checks.append(f"{'✅' if config.ANTHROPIC_API_KEY != 'YOUR_ANTHROPIC_KEY' else '⚠️'} AI brain (Claude) connected")
 
         self._send(
-            f"🏥 <b>SYSTEM HEALTH</b>\n\n" + "\n".join(checks) +
-            f"\n\n⏰ {datetime.now():%H:%M:%S IST}"
+            f"🏥 <b>System Health Check</b>\n\n" + "\n".join(checks) +
+            f"\n\nEverything {'looks good!' if all('✅' in c for c in checks) else 'needs attention.'}"
+            f"\n⏰ {datetime.now():%H:%M:%S IST}"
         )
+
+    def _cmd_why(self):
+        """Explain the last decision the bot made."""
+        if not self.bot:
+            return
+
+        regime = self.bot.regime_data.get('regime', 'N/A')
+        engine = self.bot.active_engine or "NONE"
+        conductor = self.bot.conductor_decision or {}
+        confidence = conductor.get('confidence', 0)
+        positions = [p for p in self.bot.risk.positions if p.is_open]
+
+        if positions:
+            p = positions[0]
+            reason = (
+                f"I entered a trade on {p.symbol} at ₹{p.entry_price:.2f}.\n"
+                f"The market was {regime.lower()} and the {engine} strategy gave "
+                f"a {confidence}% confidence signal. The setup matched my rules."
+            )
+        elif self.bot.risk.daily_trades > 0:
+            reason = (
+                f"I took {self.bot.risk.daily_trades} trade(s) today and closed them.\n"
+                f"The market was {regime.lower()}. I used the {engine} strategy."
+            )
+        else:
+            # Explain why no trades
+            reasons = []
+            if regime == "N/A":
+                reasons.append("I couldn't determine the market type clearly.")
+            if confidence < config.CONDUCTOR.get("min_conductor_confidence", 60):
+                reasons.append(f"Confidence was only {confidence}% (I need at least {config.CONDUCTOR.get('min_conductor_confidence', 60)}%).")
+            if not reasons:
+                reasons.append("No setup matched all my rules today.")
+
+            reason = (
+                f"No trades today. Here's why:\n"
+                + "\n".join(f"- {r}" for r in reasons)
+                + f"\n\nMarket type: {regime}. "
+                f"Taking a trade without a strong signal would likely lose money. "
+                f"I'll wait for better conditions."
+            )
+
+        self._send(f"🤔 <b>Why did I do that?</b>\n\n{reason}")
+
+    def _cmd_settings(self):
+        """Show current settings in plain English."""
+        mode = "PAPER (practice — no real money)" if config.PAPER_TRADE else "LIVE (real money!)"
+        self._send(
+            f"⚙️ <b>Your Settings</b>\n\n"
+            f"Capital: ₹{config.TOTAL_CAPITAL:,}\n"
+            f"Max risk per trade: ₹{config.MAX_RISK_PER_TRADE:,.0f} ({config.MAX_RISK_PER_TRADE_PCT}%)\n"
+            f"Max trades per day: {config.MAX_TRADES_PER_DAY}\n"
+            f"Mode: {mode}\n"
+            f"Stop trading if down: ₹{config.MAX_DAILY_LOSS:,.0f} in a day\n"
+            f"Weekly loss limit: ₹{config.MAX_WEEKLY_LOSS:,.0f}\n"
+            f"Execution: {config.EXECUTION_MODE}\n"
+            f"Instruments: {', '.join(config.ACTIVE_INSTRUMENTS)}"
+        )
+
+    def _cmd_ask(self, text):
+        """Answer a user question based on current bot state."""
+        question = text.replace("/ask", "").strip()
+        if not question:
+            self._send(
+                "Ask me anything! Examples:\n"
+                "/ask why didn't you trade today?\n"
+                "/ask what's the market doing?\n"
+                "/ask how much have I made this week?"
+            )
+            return
+
+        # Build a contextual answer from current state
+        if not self.bot:
+            self._send("⚠️ Bot is not running, can't answer right now.")
+            return
+
+        regime = self.bot.regime_data.get('regime', 'N/A')
+        engine = self.bot.active_engine or "NONE"
+        stats = self.bot.risk.daily_stats()
+        pnl = stats.get('pnl', 0)
+        trades = stats.get('trades', 0)
+
+        # Simple keyword matching for common questions
+        q = question.lower()
+        if any(w in q for w in ["why no trade", "why didn't", "why not trading", "why waiting"]):
+            self._cmd_why()
+        elif any(w in q for w in ["market", "nifty", "what's happening"]):
+            self._send(
+                f"The market is currently <b>{regime}</b>.\n"
+                f"I'm using the <b>{engine}</b> strategy.\n"
+                f"Trades today: {trades}, P&L: ₹{pnl:+,.2f}"
+            )
+        elif any(w in q for w in ["risk", "how much can i lose", "safe"]):
+            self._send(
+                f"Your max risk per trade is ₹{config.MAX_RISK_PER_TRADE:,.0f} "
+                f"({config.MAX_RISK_PER_TRADE_PCT}% of capital).\n"
+                f"I'll stop trading if you lose ₹{config.MAX_DAILY_LOSS:,.0f} in a day.\n"
+                f"Your capital is protected by multiple safety limits."
+            )
+        elif any(w in q for w in ["capital", "money", "balance"]):
+            self._send(
+                f"Your capital: ₹{config.TOTAL_CAPITAL:,}\n"
+                f"Today's P&L: ₹{pnl:+,.2f}\n"
+                f"Active capital (70%): ₹{config.ACTIVE_CAPITAL:,.0f}\n"
+                f"Reserve (30%): ₹{config.TOTAL_CAPITAL - config.ACTIVE_CAPITAL:,.0f}"
+            )
+        else:
+            self._send(
+                f"I'm not sure how to answer that, but here's what I know:\n\n"
+                f"Market: {regime}\n"
+                f"Strategy: {engine}\n"
+                f"Trades today: {trades}\n"
+                f"P&L: ₹{pnl:+,.2f}\n"
+                f"Capital: ₹{config.TOTAL_CAPITAL:,}\n\n"
+                f"Try /why, /status, /pnl, or /regime for more details."
+            )
+
+    def _cmd_explain(self, text):
+        """Explain trading terms in plain English."""
+        term = text.replace("/explain", "").strip().lower()
+        if not term:
+            self._send(
+                "Tell me a term to explain! Examples:\n"
+                "/explain PF\n"
+                "/explain VIX\n"
+                "/explain stop loss\n"
+                "/explain RSI"
+            )
+            return
+
+        explanations = {
+            "pf": (
+                "<b>Profit Factor (PF)</b>\n"
+                "= Total money won ÷ Total money lost.\n"
+                "PF > 1 means you're making money overall.\n"
+                "PF of 1.5 = for every ₹1 lost, you make ₹1.50."
+            ),
+            "profit factor": (
+                "<b>Profit Factor (PF)</b>\n"
+                "= Total money won ÷ Total money lost.\n"
+                "PF > 1 means you're making money overall.\n"
+                "PF of 1.5 = for every ₹1 lost, you make ₹1.50."
+            ),
+            "vix": (
+                "<b>VIX (Volatility Index)</b>\n"
+                "Think of it as the market's 'fear meter'.\n"
+                "Low (below 15): Market is calm, small moves.\n"
+                "Medium (15-22): Normal conditions.\n"
+                "High (above 22): Market is nervous, big swings.\n"
+                "Above 30: Panic! Very risky to trade."
+            ),
+            "stop loss": (
+                "<b>Stop Loss (SL)</b>\n"
+                "A safety net. If the price goes against you,\n"
+                "the bot automatically sells to limit your loss.\n"
+                "Example: Buy at ₹100, SL at ₹85 = max loss is ₹15."
+            ),
+            "sl": (
+                "<b>Stop Loss (SL)</b>\n"
+                "A safety net. If the price goes against you,\n"
+                "the bot automatically sells to limit your loss.\n"
+                "Example: Buy at ₹100, SL at ₹85 = max loss is ₹15."
+            ),
+            "rsi": (
+                "<b>RSI (Relative Strength Index)</b>\n"
+                "Measures if something is 'overbought' or 'oversold'.\n"
+                "Below 30: Oversold — price dropped too much, may bounce.\n"
+                "Above 70: Overbought — price rose too much, may drop.\n"
+                "The bot uses this to time entries."
+            ),
+            "vwap": (
+                "<b>VWAP (Volume Weighted Average Price)</b>\n"
+                "The 'fair price' of the day based on volume.\n"
+                "If price is below VWAP: it's cheap relative to average.\n"
+                "If price is above VWAP: it's expensive relative to average.\n"
+                "Mean reversion trades target a return to VWAP."
+            ),
+            "ce": (
+                "<b>CE (Call Option)</b>\n"
+                "A bet that the market will go UP.\n"
+                "You buy a CE when you're bullish.\n"
+                "If Nifty goes up, your CE makes money."
+            ),
+            "pe": (
+                "<b>PE (Put Option)</b>\n"
+                "A bet that the market will go DOWN.\n"
+                "You buy a PE when you're bearish.\n"
+                "If Nifty goes down, your PE makes money."
+            ),
+            "oi": (
+                "<b>OI (Open Interest)</b>\n"
+                "How many option contracts are currently active.\n"
+                "High OI = lots of traders are interested = good liquidity.\n"
+                "Low OI = risky, hard to buy/sell at fair prices."
+            ),
+            "fii": (
+                "<b>FII (Foreign Institutional Investors)</b>\n"
+                "Big foreign funds that invest in Indian markets.\n"
+                "When FII buy: usually bullish for market.\n"
+                "When FII sell: usually bearish pressure."
+            ),
+            "dii": (
+                "<b>DII (Domestic Institutional Investors)</b>\n"
+                "Indian mutual funds, insurance companies, etc.\n"
+                "They often buy when FII sell (and vice versa).\n"
+                "DII buying supports the market during sell-offs."
+            ),
+            "regime": (
+                "<b>Market Regime</b>\n"
+                "The 'type' of market right now:\n"
+                "TRENDING: Moving steadily in one direction.\n"
+                "RANGING: Bouncing sideways between levels.\n"
+                "VOLATILE: Big unpredictable swings.\n"
+                "Different strategies work for each type."
+            ),
+            "paper trade": (
+                "<b>Paper Trading</b>\n"
+                "Practice mode! The bot does everything except\n"
+                "place real orders. You see what would happen\n"
+                "without risking real money. Great for testing."
+            ),
+            "trailing stop": (
+                "<b>Trailing Stop</b>\n"
+                "A stop loss that moves UP with the price.\n"
+                "It locks in profits as the trade goes your way.\n"
+                "If price drops back, it sells automatically."
+            ),
+        }
+
+        # Try to find a match
+        reply = explanations.get(term)
+        if not reply:
+            # Try partial matching
+            for key, val in explanations.items():
+                if term in key or key in term:
+                    reply = val
+                    break
+
+        if reply:
+            self._send(f"📚 {reply}")
+        else:
+            self._send(
+                f"I don't have an explanation for '{term}' yet.\n"
+                f"Try: PF, VIX, RSI, VWAP, stop loss, CE, PE, OI, FII, DII, regime, paper trade, trailing stop"
+            )
 
     def _cmd_help(self):
         self._send(
-            "📋 <b>COMMANDS</b>\n\n"
-            "/status — Bot status & active engine\n"
-            "/pnl — Today's P&L\n"
-            "/feeds — Live data (FII, VIX, OI, crude)\n"
-            "/regime — Market regime analysis\n"
-            "/signal — Force a market scan\n"
+            "📋 <b>Commands — talk to your bot!</b>\n\n"
+            "<b>Market info:</b>\n"
+            "/status — Is the bot running? What's it doing?\n"
+            "/pnl — How much did I make/lose today?\n"
+            "/feeds — What are big investors doing?\n"
+            "/regime — What type of market is it today?\n\n"
+            "<b>Actions:</b>\n"
+            "/signal — Force a market scan now\n"
             "/stop — Pause the bot\n"
-            "/resume — Resume the bot\n"
-            "/health — System health check\n"
-            "/help — This message"
+            "/resume — Resume the bot\n\n"
+            "<b>Learn & understand:</b>\n"
+            "/why — Why did you do (or not do) that?\n"
+            "/ask [question] — Ask me anything\n"
+            "/explain [term] — What does this term mean?\n"
+            "/settings — Show my current settings\n"
+            "/health — Is everything working?\n"
         )

@@ -37,7 +37,7 @@ Respond ONLY in JSON:
 
 def call_conductor(indicators: dict, regime: dict, macro: dict, news: dict) -> dict:
     """Call Claude API for strategy decision."""
-    if not config.CONDUCTOR["use_ai"] or config.ANTHROPIC_API_KEY == "YOUR_ANTHROPIC_KEY":
+    if not config.CONDUCTOR["use_ai"] or not config.ANTHROPIC_API_KEY or len(config.ANTHROPIC_API_KEY) < 10 or config.ANTHROPIC_API_KEY.startswith("YOUR"):
         return fallback_conductor(regime)
 
     data_package = _build_input(indicators, regime, macro, news)

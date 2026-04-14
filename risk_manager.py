@@ -63,8 +63,8 @@ class RiskManager:
             return False, f"Daily limit ({config.MAX_TRADES_PER_DAY} trades)"
 
         # Daily loss limit [trade-psychology §1]
-        if self.daily_pnl <= -config.MAX_DAILY_LOSS:
-            return False, f"Daily loss limit ₹{config.MAX_DAILY_LOSS}"
+        if self.daily_pnl <= -(config.MAX_DAILY_LOSS * 0.8):
+            return False, f"Daily loss limit (80% of ₹{config.MAX_DAILY_LOSS:,.0f} hit)"
 
         # Open position check
         if any(p.is_open for p in self.positions):
@@ -78,21 +78,16 @@ class RiskManager:
         # ── PSYCHOLOGY CHECKS [trade-psychology §4] ──
 
         if config.PSYCHOLOGY["red_flag_checks"]:
-            # Revenge trading guard: 30 min cooldown after loss
-            if self.last_loss_time and config.PSYCHOLOGY["no_revenge_trade"]:
-                cooldown = timedelta(minutes=config.PSYCHOLOGY["cooldown_after_loss_minutes"])
+            # Revenge trading guard: cooldown after loss
+            if self.last_loss_time and config.PSYCHOLOGY["revenge_trade_block"]:
+                cooldown = timedelta(minutes=config.PSYCHOLOGY["cooldown_after_loss_streak"])
                 if datetime.now() - self.last_loss_time < cooldown:
                     remaining = cooldown - (datetime.now() - self.last_loss_time)
                     return False, f"Revenge cooldown: {remaining.seconds//60}min left"
 
             # Consecutive loss pause
-            if self.consecutive_losses >= config.PSYCHOLOGY["consecutive_loss_pause"]:
+            if self.consecutive_losses >= config.PSYCHOLOGY["max_consecutive_losses"]:
                 return False, f"{self.consecutive_losses} consecutive losses — stopping for today"
-
-            # Weekly loss check
-            weekly_limit = config.TOTAL_CAPITAL * (config.PSYCHOLOGY["weekly_loss_pause_pct"] / 100)
-            if self.weekly_pnl <= -weekly_limit:
-                return False, f"Weekly loss limit ₹{weekly_limit:.0f} hit"
 
         return True, "Clear to trade"
 
@@ -197,7 +192,6 @@ class RiskManager:
             drop = ((current - pos.highest_premium) / pos.highest_premium) * 100
             if drop <= -config.TRAILING_DROP_FROM_PEAK:
                 return True, f"TRAILING: -{abs(drop):.1f}% from peak (₹{mtm_pnl:,.0f})"
-                return True, f"TRAILING: -{abs(drop):.1f}% from peak ₹{pos.highest_premium:.2f}"
 
         # 5. Time stop [trading-intelligence §5]
         if pos.holding_minutes >= config.TIME_STOP_MINUTES and pnl_pct < 5:

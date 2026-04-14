@@ -61,7 +61,7 @@ TOTAL_CAPITAL = 10000              # ← CHANGE THIS TO YOUR CAPITAL. That's it.
 
 # Risk percentages (auto-scale with capital)
 MAX_RISK_PER_TRADE_PCT = 2.5      # 2.5% of capital per trade
-MAX_CAPITAL_PER_TRADE_PCT = 35    # Max 35% of capital on one position
+MAX_CAPITAL_PER_TRADE_PCT = 30    # Max 30% of capital on one position (buffer for fees/slippage)
 MAX_DAILY_LOSS_PCT = 7.5          # Stop trading if down 7.5% in a day
 MAX_WEEKLY_LOSS_PCT = 15          # Stop trading if down 15% in a week
 
@@ -237,10 +237,27 @@ OPTIONS = {
 # [MACRO] MACRO [market-microstructure-india]
 # ═══════════════════════════════════════
 MACRO = {
-    "fii_negligible": 1000, "fii_significant": 5000,
-    "vix_low": 15, "vix_high": 22, "vix_panic": 30,
+    # FII thresholds
+    "fii_negligible": 500, "fii_negligible_cr": 500,
+    "fii_moderate_cr": 1500,
+    "fii_significant": 3000, "fii_significant_cr": 3000,
+    # VIX thresholds
+    "vix_low": 12, "vix_normal_low": 12,
+    "vix_high": 20, "vix_normal_high": 20,
+    "vix_panic": 25, "vix_elevated": 25,
     "vix_reduce_size_above": 25,
+    # Crude thresholds
+    "crude_positive_below": 75,
+    "crude_neutral_below": 85,
+    "crude_cautionary_below": 100,
     "crude_caution_above": 100,
+    # Gap thresholds
+    "gap_small_pct": 0.3,
+    "gap_full_pct": 0.8,
+    "gap_large_pct": 1.5,
+    "gap_fill_prob_full": 30,
+    "gap_fill_prob_partial": 55,
+    "gap_fill_prob_small": 75,
 }
 
 # ═══════════════════════════════════════
@@ -257,9 +274,10 @@ BACKTEST = {
 # [AI] PSYCHOLOGY [trade-psychology-capital]
 # ═══════════════════════════════════════
 PSYCHOLOGY = {
-    "cooldown_after_loss_min": 30,
-    "consecutive_loss_pause": 3,
-    "weekly_loss_pause_pct": 20,
+    "red_flag_checks": True,
+    "max_consecutive_losses": 3,
+    "cooldown_after_loss_streak": 30,
+    "revenge_trade_block": True,
 }
 
 # ═══════════════════════════════════════

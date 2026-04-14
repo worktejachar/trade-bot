@@ -265,12 +265,12 @@ def daily_launch(paper_mode=None):
         print("  💡 Run again tomorrow before 9:15 AM.")
         return
 
+    import config
     if paper_mode is not None:
-        import config
         config.PAPER_TRADE = paper_mode
 
-    print(f"  📊 Mode: {'📝 PAPER TRADING (no real orders)' if True else '⚡ LIVE TRADING'}")
-    print(f"  💰 Capital: ₹10,000")
+    print(f"  📊 Mode: {'📝 PAPER TRADING (no real orders)' if config.PAPER_TRADE else '⚡ LIVE TRADING'}")
+    print(f"  💰 Capital: ₹{config.TOTAL_CAPITAL:,}")
     print(f"  🎯 Strategy: RSI + VWAP + EMA Confluence")
     print(f"  📱 Alerts: Telegram")
     print()

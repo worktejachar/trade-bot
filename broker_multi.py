@@ -127,6 +127,14 @@ class OrderConfirmation:
                 elif status == "cancelled":
                     return {"status": "CANCELLED", "order_id": order_id}
 
+                elif status in ("partially_filled", "partial"):
+                    filled_qty = OrderConfirmation._get_fill_qty(broker, order_id)
+                    fill_price = OrderConfirmation._get_fill_price(broker, order_id)
+                    if filled_qty > 0:
+                        logger.warning(f"⚠️ Partial fill: {filled_qty} filled. Keeping partial position.")
+                        return {"status": "FILLED", "order_id": order_id,
+                                "fill_price": fill_price, "filled_qty": filled_qty, "partial": True}
+
                 # Exponential backoff
                 t_.sleep(backoff)
                 backoff = min(backoff * 1.5, 5)  # Cap at 5 seconds
