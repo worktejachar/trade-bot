@@ -240,6 +240,6 @@ MIT — See [LICENSE](LICENSE)
 
 ---
 
-**Built by [GarudawnX](https://garudawnx.com) | Powered by [Claude AI](https://anthropic.com)**
+**Built by [GarudawnX](https://garudawnx.com)❤️| Powered by [Claude AI](https://anthropic.com)**
 
-Star this repo if you find it useful!
+⭐️ Star this repo if you find it useful!
